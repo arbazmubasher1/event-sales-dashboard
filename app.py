@@ -18,7 +18,7 @@ st.set_page_config(page_title="Event Sales – Live (API Version)", page_icon="�
 API_URL = "https://lugtmmcpcgzyytkzqozn.supabase.co/rest/v1/orders"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Z3RtbWNwY2d6eXl0a3pxb3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzODk0MDQsImV4cCI6MjA3NDk2NTQwNH0.uSEDsRNpH_QGwgGxrrxuYKCkuH3lszd8O9w7GN9INpE"
 
-# Optional local dev CSV fallback (kept because you mentioned sharing a CSV)
+# Optional local dev CSV fallback
 LOCAL_CSV_CANDIDATES = ["orders_rows.csv", "./data/orders_rows.csv"]
 
 
@@ -97,7 +97,9 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
             except Exception:
                 return []
         df["items_parsed"] = df["items"].apply(parse_items)
-        df["items_count"] = df["items_parsed"].apply(lambda lst: sum(int(i.get("quantity", 0) or 0) for i in (lst or [])))
+        df["items_count"] = df["items_parsed"].apply(
+            lambda lst: sum(int(i.get("quantity", 0) or 0) for i in (lst or []))
+        )
     else:
         df["items_parsed"] = [[] for _ in range(len(df))]
         df["items_count"] = 0
@@ -159,7 +161,11 @@ if df.empty:
 branch_opts = sorted([b for b in df["branch"].astype(str).unique() if b])
 order_type_opts = sorted([o for o in df["order_type"].astype(str).unique() if o])
 payment_opts = sorted([p for p in df["payment_method"].astype(str).unique() if p])
-status_opts = sorted([s for s in df["status"].astype(str).str.title().unique() if s])
+
+# --- Status options (force include 'Cancelled') ---
+status_opts = sorted({s for s in df["status"].astype(str).str.title().unique() if s})
+if "Cancelled" not in status_opts:
+    status_opts.append("Cancelled")
 
 with st.sidebar.expander("More filters", expanded=False):
     sel_branches = st.multiselect("Branch", options=branch_opts, default=branch_opts)
@@ -176,12 +182,15 @@ fdf = fdf[fdf["status"].astype(str).str.title().isin(sel_status)]
 fdf = fdf[fdf.get("grand_total", 0).fillna(0) >= min_amount]
 
 if address_query:
-    fdf = fdf[fdf.get("customer_address", "").astype(str).str.contains(address_query, case=False, na=False)]
+    fdf = fdf[
+        fdf.get("customer_address", "").astype(str).str.contains(address_query, case=False, na=False)
+    ]
 
 if customer_query:
-    cus_cols = (fdf.get("customer_name", ""), fdf.get("customer_phone", ""))
-    mask = cus_cols[0].astype(str).str.contains(customer_query, case=False, na=False) | \
-           cus_cols[1].astype(str).str.contains(customer_query, case=False, na=False)
+    cus_name = fdf.get("customer_name", "").astype(str)
+    cus_phone = fdf.get("customer_phone", "").astype(str)
+    mask = cus_name.str.contains(customer_query, case=False, na=False) | \
+           cus_phone.str_contains(customer_query, case=False, na=False)
     fdf = fdf[mask]
 
 if fdf.empty:
@@ -195,7 +204,9 @@ total_orders = len(fdf)
 total_gmv = float(fdf["grand_total"].sum(skipna=True)) if "grand_total" in fdf.columns else 0
 avg_ticket = total_gmv / total_orders if total_orders else 0
 total_items = int(fdf["items_count"].sum())
-completed_mask = fdf["status"].astype(str).str.lower().isin(["delivered", "completed", "paid", "done", "closed"])
+completed_mask = fdf["status"].astype(str).str.lower().isin(
+    ["delivered", "completed", "paid", "done", "closed"]
+)
 completion_rate = completed_mask.mean() * 100 if total_orders else 0
 
 k1, k2, k3, k4, k5 = st.columns(5)
@@ -216,15 +227,24 @@ else:
     fdf["bucket"] = fdf["created_at"].dt.tz_convert(None).dt.floor("H")
 
 by_time = fdf.groupby("bucket", as_index=False).agg(
-    orders=("id", "count"),
+    orders=("id", "count") if "id" in fdf.columns else ("grand_total", "size"),
     gmv=("grand_total", "sum")
 ).sort_values("bucket")
 by_time["cum_gmv"] = by_time["gmv"].cumsum()
 
 base = alt.Chart(by_time).encode(x=alt.X("bucket:T", title="Time"))
-st.altair_chart(base.mark_line(point=True).encode(y=alt.Y("orders:Q", title="Orders")), use_container_width=True)
-st.altair_chart(base.mark_line(point=True).encode(y=alt.Y("gmv:Q", title="GMV (Rs)")), use_container_width=True)
-st.altair_chart(base.mark_line(point=True).encode(y=alt.Y("cum_gmv:Q", title="Cumulative GMV (Rs)")), use_container_width=True)
+st.altair_chart(
+    base.mark_line(point=True).encode(y=alt.Y("orders:Q", title="Orders")),
+    use_container_width=True
+)
+st.altair_chart(
+    base.mark_line(point=True).encode(y=alt.Y("gmv:Q", title="GMV (Rs)")),
+    use_container_width=True
+)
+st.altair_chart(
+    base.mark_line(point=True).encode(y=alt.Y("cum_gmv:Q", title="Cumulative GMV (Rs)")),
+    use_container_width=True
+)
 
 # ------------------------
 # Breakdowns
@@ -234,7 +254,11 @@ c1, c2 = st.columns(2)
 
 with c1:
     if "branch" in fdf.columns:
-        b1 = fdf.groupby("branch", as_index=False)["grand_total"].sum().rename(columns={"grand_total": "gmv"})
+        b1 = (
+            fdf.groupby("branch", as_index=False)["grand_total"]
+            .sum()
+            .rename(columns={"grand_total": "gmv"})
+        )
         st.altair_chart(
             alt.Chart(b1).mark_bar().encode(
                 x=alt.X("gmv:Q", title="GMV (Rs)"),
@@ -244,10 +268,14 @@ with c1:
             use_container_width=True,
         )
     if "order_type" in fdf.columns:
-        b2 = fdf.groupby("order_type", as_index=False).agg(orders=("id", "count"), gmv=("grand_total", "sum"))
+        b2 = fdf.groupby("order_type", as_index=False).agg(
+            orders=("id", "count") if "id" in fdf.columns else ("grand_total", "size"),
+            gmv=("grand_total", "sum")
+        )
         st.altair_chart(
             alt.Chart(b2).mark_bar().encode(
-                x="orders:Q", y=alt.Y("order_type:N", sort="-x"),
+                x="orders:Q",
+                y=alt.Y("order_type:N", sort="-x"),
                 tooltip=["order_type", "orders", alt.Tooltip("gmv:Q", format=",")]
             ),
             use_container_width=True,
@@ -255,10 +283,14 @@ with c1:
 
 with c2:
     if "payment_method" in fdf.columns:
-        b3 = fdf.groupby("payment_method", as_index=False).agg(orders=("id", "count"), gmv=("grand_total", "sum"))
+        b3 = fdf.groupby("payment_method", as_index=False).agg(
+            orders=("id", "count") if "id" in fdf.columns else ("grand_total", "size"),
+            gmv=("grand_total", "sum")
+        )
         st.altair_chart(
             alt.Chart(b3).mark_bar().encode(
-                x="orders:Q", y=alt.Y("payment_method:N", sort="-x"),
+                x="orders:Q",
+                y=alt.Y("payment_method:N", sort="-x"),
                 tooltip=["payment_method", "orders", alt.Tooltip("gmv:Q", format=",")]
             ),
             use_container_width=True,
@@ -268,18 +300,66 @@ with c2:
         b4.columns = ["status", "orders"]
         st.altair_chart(
             alt.Chart(b4).mark_bar().encode(
-                x="orders:Q", y=alt.Y("status:N", sort="-x"),
+                x="orders:Q",
+                y=alt.Y("status:N", sort="-x"),
                 tooltip=["status", "orders"]
             ),
             use_container_width=True,
         )
 
 # ------------------------
-# Address Insights
+# Address-wise Sales (Filtered Range)
+# ------------------------
+st.subheader("Address-wise Sales (Filtered Range)")
+
+addr_col = fdf.get("customer_address", pd.Series(dtype=str)).astype(str).str.strip()
+addr_df = fdf.assign(address=addr_col)
+addr_df = addr_df[addr_df["address"] != ""]
+
+if not addr_df.empty:
+    # pick an id-like column for order counts
+    if "id" in addr_df.columns:
+        order_id_col = "id"
+    elif "order_number" in addr_df.columns:
+        order_id_col = "order_number"
+    else:
+        order_id_col = None
+
+    if order_id_col:
+        addr_sales = addr_df.groupby("address", as_index=False).agg(
+            orders=(order_id_col, "count"),
+            gmv=("grand_total", "sum")
+        )
+    else:
+        addr_sales = addr_df.groupby("address", as_index=False).agg(
+            orders=("grand_total", "size"),
+            gmv=("grand_total", "sum")
+        )
+
+    addr_sales = addr_sales.sort_values("gmv", ascending=False)
+
+    st.altair_chart(
+        alt.Chart(addr_sales.head(20)).mark_bar().encode(
+            x=alt.X("gmv:Q", title="GMV (Rs)"),
+            y=alt.Y("address:N", sort="-x"),
+            tooltip=["address", "orders", alt.Tooltip("gmv:Q", format=",")]
+        ),
+        use_container_width=True,
+    )
+
+    st.dataframe(
+        addr_sales,
+        use_container_width=True,
+        hide_index=True
+    )
+else:
+    st.info("No address-level data available for the selected filters/date range.")
+
+# ------------------------
+# Address Insights (Top Addresses by Orders)
 # ------------------------
 st.subheader("Address Insights")
 
-# Top full-addresses
 addr_series = fdf.get("customer_address", pd.Series(dtype=str)).astype(str).str.strip()
 addr_counts = addr_series[addr_series != ""].value_counts().reset_index()
 addr_counts.columns = ["address", "orders"]
@@ -311,7 +391,10 @@ for _, row in fdf.iterrows():
 items_df = pd.DataFrame(items_rows)
 
 if not items_df.empty:
-    agg = items_df.groupby("name", as_index=False).agg(quantity=("quantity", "sum"), revenue=("revenue", "sum"))
+    agg = items_df.groupby("name", as_index=False).agg(
+        quantity=("quantity", "sum"),
+        revenue=("revenue", "sum")
+    )
     agg = agg.sort_values(["revenue", "quantity"], ascending=[False, False]).head(20)
     st.altair_chart(
         alt.Chart(agg).mark_bar().encode(
@@ -329,14 +412,36 @@ else:
 # Recent Orders + Export
 # ------------------------
 st.subheader("Recent Orders (Filtered)")
-cols = [c for c in ["created_at","order_number","branch","order_type","payment_method",
-                    "grand_total","status","cashier_name","customer_name","customer_phone","customer_address"]
-        if c in fdf.columns]
-st.dataframe(fdf.sort_values("created_at", ascending=False).head(100)[cols], use_container_width=True, hide_index=True)
+cols = [
+    c for c in [
+        "created_at",
+        "order_number",
+        "branch",
+        "order_type",
+        "payment_method",
+        "grand_total",
+        "status",
+        "cashier_name",
+        "customer_name",
+        "customer_phone",
+        "customer_address",
+    ]
+    if c in fdf.columns
+]
+st.dataframe(
+    fdf.sort_values("created_at", ascending=False).head(100)[cols],
+    use_container_width=True,
+    hide_index=True,
+)
 
 # Export filtered
 csv_buf = io.StringIO()
 fdf.to_csv(csv_buf, index=False)
-st.download_button("⬇️ Download filtered CSV", data=csv_buf.getvalue(), file_name="orders_filtered.csv", mime="text/csv")
+st.download_button(
+    "⬇️ Download filtered CSV",
+    data=csv_buf.getvalue(),
+    file_name="orders_filtered.csv",
+    mime="text/csv",
+)
 
 st.caption(f"Connected to Supabase REST: {API_URL}")
