@@ -18,7 +18,7 @@ st.set_page_config(page_title="Event Sales â€“ Live (API Version)", page_icon="ð
 API_URL = "https://lugtmmcpcgzyytkzqozn.supabase.co/rest/v1/orders"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Z3RtbWNwY2d6eXl0a3pxb3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzODk0MDQsImV4cCI6MjA3NDk2NTQwNH0.uSEDsRNpH_QGwgGxrrxuYKCkuH3lszd8O9w7GN9INpE"
 
-# Optional local dev CSV fallback
+# Optional local dev CSV fallback (kept because you mentioned sharing a CSV)
 LOCAL_CSV_CANDIDATES = ["orders_rows.csv", "./data/orders_rows.csv"]
 
 
@@ -133,6 +133,7 @@ end = st.sidebar.date_input("End date", value=today_utc)
 start_dt = datetime.combine(start, datetime.min.time()).replace(tzinfo=timezone.utc)
 end_dt = datetime.combine(end, datetime.max.time()).replace(tzinfo=timezone.utc)
 
+# Free-text filters
 address_query = st.sidebar.text_input("Filter by address (contains)", value="").strip()
 customer_query = st.sidebar.text_input("Customer name/phone (contains)", value="").strip()
 
@@ -162,35 +163,58 @@ branch_opts = sorted([b for b in df["branch"].astype(str).unique() if b])
 order_type_opts = sorted([o for o in df["order_type"].astype(str).unique() if o])
 payment_opts = sorted([p for p in df["payment_method"].astype(str).unique() if p])
 
-# --- Status options (force include 'Cancelled') ---
+# Status options (force include 'Cancelled')
 status_opts = sorted({s for s in df["status"].astype(str).str.title().unique() if s})
 if "Cancelled" not in status_opts:
     status_opts.append("Cancelled")
+
+# Event / Address options (treat address as event)
+addr_series_all = df.get("customer_address", pd.Series(dtype=str)).astype(str).str.strip()
+addr_opts = sorted([a for a in addr_series_all.unique() if a])
 
 with st.sidebar.expander("More filters", expanded=False):
     sel_branches = st.multiselect("Branch", options=branch_opts, default=branch_opts)
     sel_order_types = st.multiselect("Order type", options=order_type_opts, default=order_type_opts)
     sel_payments = st.multiselect("Payment method", options=payment_opts, default=payment_opts)
     sel_status = st.multiselect("Status", options=status_opts, default=status_opts)
+    sel_addresses = st.multiselect(
+        "Event / Address",
+        options=addr_opts,
+        default=addr_opts if addr_opts else []
+    )
 
-# apply filters
+# ------------------------
+# Apply filters
+# ------------------------
 fdf = df.copy()
+
+# Branch / type / payment / status
 fdf = fdf[fdf["branch"].astype(str).isin(sel_branches)]
 fdf = fdf[fdf["order_type"].astype(str).isin(sel_order_types)]
 fdf = fdf[fdf["payment_method"].astype(str).isin(sel_payments)]
 fdf = fdf[fdf["status"].astype(str).str.title().isin(sel_status)]
+
+# Event / Address (exact match)
+if sel_addresses:
+    fdf = fdf[
+        fdf.get("customer_address", "").astype(str).str.strip().isin(sel_addresses)
+    ]
+
+# Min amount
 fdf = fdf[fdf.get("grand_total", 0).fillna(0) >= min_amount]
 
+# Address contains (free-text search)
 if address_query:
     fdf = fdf[
         fdf.get("customer_address", "").astype(str).str.contains(address_query, case=False, na=False)
     ]
 
+# Customer name/phone contains
 if customer_query:
     cus_name = fdf.get("customer_name", "").astype(str)
     cus_phone = fdf.get("customer_phone", "").astype(str)
     mask = cus_name.str.contains(customer_query, case=False, na=False) | \
-           cus_phone.str_contains(customer_query, case=False, na=False)
+           cus_phone.str.contains(customer_query, case=False, na=False)
     fdf = fdf[mask]
 
 if fdf.empty:
@@ -317,7 +341,7 @@ addr_df = fdf.assign(address=addr_col)
 addr_df = addr_df[addr_df["address"] != ""]
 
 if not addr_df.empty:
-    # pick an id-like column for order counts
+    # choose an id-like column for counts
     if "id" in addr_df.columns:
         order_id_col = "id"
     elif "order_number" in addr_df.columns:
@@ -347,11 +371,7 @@ if not addr_df.empty:
         use_container_width=True,
     )
 
-    st.dataframe(
-        addr_sales,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(addr_sales, use_container_width=True, hide_index=True)
 else:
     st.info("No address-level data available for the selected filters/date range.")
 
