@@ -13,12 +13,12 @@ import altair as alt
 # ------------------------
 # CONFIG
 # ------------------------
-st.set_page_config(page_title="Event Sales – Live (API Version)", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Event Sales – Live (Delivery Kiosk)", page_icon="📈", layout="wide")
 
 API_URL = "https://lugtmmcpcgzyytkzqozn.supabase.co/rest/v1/orders"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Z3RtbWNwY2d6eXl0a3pxb3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzODk0MDQsImV4cCI6MjA3NDk2NTQwNH0.uSEDsRNpH_QGwgGxrrxuYKCkuH3lszd8O9w7GN9INpE"
 
-# Optional local dev CSV fallback (kept because you mentioned sharing a CSV)
+# Optional local dev CSV fallback
 LOCAL_CSV_CANDIDATES = ["orders_rows.csv", "./data/orders_rows.csv"]
 
 
@@ -168,19 +168,25 @@ status_opts = sorted({s for s in df["status"].astype(str).str.title().unique() i
 if "Cancelled" not in status_opts:
     status_opts.append("Cancelled")
 
-# Event / Address options (treat address as event)
+# Event / Address options (treat customer_address as event)
 addr_series_all = df.get("customer_address", pd.Series(dtype=str)).astype(str).str.strip()
 addr_opts = sorted([a for a in addr_series_all.unique() if a])
+
+# Core selectors
+sel_payment_methods = st.sidebar.multiselect(
+    "Payment method",
+    options=payment_opts,
+    default=payment_opts,
+)
 
 with st.sidebar.expander("More filters", expanded=False):
     sel_branches = st.multiselect("Branch", options=branch_opts, default=branch_opts)
     sel_order_types = st.multiselect("Order type", options=order_type_opts, default=order_type_opts)
-    sel_payments = st.multiselect("Payment method", options=payment_opts, default=payment_opts)
     sel_status = st.multiselect("Status", options=status_opts, default=status_opts)
     sel_addresses = st.multiselect(
         "Event / Address",
         options=addr_opts,
-        default=addr_opts if addr_opts else []
+        default=addr_opts if addr_opts else [],
     )
 
 # ------------------------
@@ -191,7 +197,7 @@ fdf = df.copy()
 # Branch / type / payment / status
 fdf = fdf[fdf["branch"].astype(str).isin(sel_branches)]
 fdf = fdf[fdf["order_type"].astype(str).isin(sel_order_types)]
-fdf = fdf[fdf["payment_method"].astype(str).isin(sel_payments)]
+fdf = fdf[fdf["payment_method"].astype(str).isin(sel_payment_methods)]
 fdf = fdf[fdf["status"].astype(str).str.title().isin(sel_status)]
 
 # Event / Address (exact match)
