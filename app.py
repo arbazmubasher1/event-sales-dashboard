@@ -22,53 +22,6 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 LOCAL_CSV_CANDIDATES = ["orders_rows.csv", "./data/orders_rows.csv"]
 
 
-# ============================
-# DFPL TAB
-# ============================
-tab_main, tab_dfpl = st.tabs(["Dashboard", "DFPL Panel"])
-
-with tab_dfpl:
-    st.header("📞 DFPL – Today’s Orders")
-
-    # --- Today’s window (UTC) ---
-    today_date = datetime.utcnow().date()
-    dfpl_start_dt = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-    dfpl_end_dt = datetime.combine(today_date, datetime.max.time()).replace(tzinfo=timezone.utc)
-
-    dfpl_df = fetch_orders(dfpl_start_dt, dfpl_end_dt)
-
-    if dfpl_df.empty:
-        st.warning("No orders found for today.")
-    else:
-        # Phone search
-        phone_filter = st.text_input("Search by phone number", "").strip()
-        if phone_filter:
-            dfpl_df = dfpl_df[
-                dfpl_df["customer_phone"].astype(str).str.contains(phone_filter, case=False, na=False)
-            ]
-
-        if dfpl_df.empty:
-            st.warning("No results match your search.")
-        else:
-            # Sort by latest
-            dfpl_df = dfpl_df.sort_values("created_at", ascending=False)
-
-            # Show DFPL table
-            st.dataframe(
-                dfpl_df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            # Export
-            csv_buf2 = io.StringIO()
-            dfpl_df.to_csv(csv_buf2, index=False)
-            st.download_button(
-                "⬇️ Download today's DFPL CSV",
-                data=csv_buf2.getvalue(),
-                file_name="dfpl_today_orders.csv",
-                mime="text/csv",
-            )
 
 
 # ------------------------
@@ -168,6 +121,54 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
             df[col] = default
 
     return df
+
+# ============================
+# DFPL TAB
+# ============================
+tab_main, tab_dfpl = st.tabs(["Dashboard", "DFPL Panel"])
+
+with tab_dfpl:
+    st.header("📞 DFPL – Today’s Orders")
+
+    # --- Today’s window (UTC) ---
+    today_date = datetime.utcnow().date()
+    dfpl_start_dt = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    dfpl_end_dt = datetime.combine(today_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+
+    dfpl_df = fetch_orders(dfpl_start_dt, dfpl_end_dt)
+
+    if dfpl_df.empty:
+        st.warning("No orders found for today.")
+    else:
+        # Phone search
+        phone_filter = st.text_input("Search by phone number", "").strip()
+        if phone_filter:
+            dfpl_df = dfpl_df[
+                dfpl_df["customer_phone"].astype(str).str.contains(phone_filter, case=False, na=False)
+            ]
+
+        if dfpl_df.empty:
+            st.warning("No results match your search.")
+        else:
+            # Sort by latest
+            dfpl_df = dfpl_df.sort_values("created_at", ascending=False)
+
+            # Show DFPL table
+            st.dataframe(
+                dfpl_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Export
+            csv_buf2 = io.StringIO()
+            dfpl_df.to_csv(csv_buf2, index=False)
+            st.download_button(
+                "⬇️ Download today's DFPL CSV",
+                data=csv_buf2.getvalue(),
+                file_name="dfpl_today_orders.csv",
+                mime="text/csv",
+            )
 
 
 # ------------------------
