@@ -1,11 +1,11 @@
-# app.py — Event Sales Dashboard + DFPL "EXE Not Working" Tab
+# app.py — API-based dashboard with address & rich filters
 
 import os
 import json
 import io
 import requests
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 import pandas as pd
 import streamlit as st
 import altair as alt
@@ -13,11 +13,12 @@ import altair as alt
 # ------------------------
 # CONFIG
 # ------------------------
-st.set_page_config(page_title="Event Sales – Live (API Version)", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Event Sales – Live (Delivery Kiosk)", page_icon="📈", layout="wide")
 
 API_URL = "https://lugtmmcpcgzyytkzqozn.supabase.co/rest/v1/orders"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Z3RtbWNwY2d6eXl0a3pxb3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MTcwNTcsImV4cCI6MjA3NDI5MzA1N30.FmZV8z8XXm1x_cex8CxRPRYt0RT_L9Mrm0qCc03zcj8"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Z3RtbWNwY2d6eXl0a3pxb3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzODk0MDQsImV4cCI6MjA3NDk2NTQwNH0.uSEDsRNpH_QGwgGxrrxuYKCkuH3lszd8O9w7GN9INpE"
 
+# Optional local dev CSV fallback
 LOCAL_CSV_CANDIDATES = ["orders_rows.csv", "./data/orders_rows.csv"]
 
 
@@ -61,14 +62,15 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
         else:
             params["created_at"] = f"lte.{max_dt.isoformat()}"
 
+    # Try API first
     try:
         r = requests.get(API_URL, headers=headers, params=params, timeout=20)
         r.raise_for_status()
-        df = pd.DataFrame(r.json())
-    except Exception:
-        st.warning("API error — falling back to local CSV.")
-        tmp = _load_local_csv()
-        df = tmp if tmp is not None else pd.DataFrame()
+        data = r.json()
+        df = pd.DataFrame(data)
+    except Exception as e:
+        st.warning(f"API fetch failed ({e}). Falling back to local CSV if available.")
+        df = _load_local_csv() or pd.DataFrame()
 
     if df.empty:
         return df
@@ -76,16 +78,20 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
     # Normalize
     if "created_at" in df.columns:
         df["created_at"] = df["created_at"].apply(_parse_datetime)
+    else:
+        df["created_at"] = pd.Timestamp.utcnow().tz_convert(None)
 
     for c in ["items_total", "delivery_charge", "grand_total"]:
         if c in df.columns:
             df[c] = _safe_to_numeric(df[c])
 
-    # Parse items
+    # items parsing
     if "items" in df.columns:
         def parse_items(x):
             if isinstance(x, (list, dict)):
                 return x
+            if pd.isna(x):
+                return []
             try:
                 return json.loads(x)
             except Exception:
@@ -98,7 +104,7 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
         df["items_parsed"] = [[] for _ in range(len(df))]
         df["items_count"] = 0
 
-    # Defaults
+    # fill basics if missing
     for col, default in [
         ("branch", "N/A"),
         ("status", "unknown"),
@@ -116,174 +122,352 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
 
 
 # ------------------------
-# SIDEBAR FILTERS
+# Sidebar Filters
 # ------------------------
 st.sidebar.header("Filters")
 
 today_utc = datetime.utcnow().date()
-start = st.sidebar.date_input("Start date", today_utc)
-end = st.sidebar.date_input("End date", today_utc)
+start = st.sidebar.date_input("Start date", value=today_utc)
+end = st.sidebar.date_input("End date", value=today_utc)
 
 start_dt = datetime.combine(start, datetime.min.time()).replace(tzinfo=timezone.utc)
 end_dt = datetime.combine(end, datetime.max.time()).replace(tzinfo=timezone.utc)
 
-address_query = st.sidebar.text_input("Filter by address (contains)", "").strip()
-customer_query = st.sidebar.text_input("Customer name/phone (contains)", "").strip()
-min_amount = st.sidebar.number_input("Min grand total (Rs)", min_value=0, value=0)
+# Free-text filters
+address_query = st.sidebar.text_input("Filter by address (contains)", value="").strip()
+customer_query = st.sidebar.text_input("Customer name/phone (contains)", value="").strip()
+
+min_amount = st.sidebar.number_input("Min grand total (Rs)", min_value=0, value=0, step=100)
 
 if st.sidebar.button("🔄 Refresh data"):
     fetch_orders.clear()
 
-st.sidebar.caption("API: " + API_URL)
-
+st.sidebar.markdown("---")
+st.sidebar.caption("API Source")
+st.sidebar.text_input("Endpoint", value=API_URL, disabled=True)
 
 # ------------------------
-# LOAD DATA
+# Load
 # ------------------------
 df = fetch_orders(start_dt, end_dt)
 
+st.title("📊 Event Sales – Live Dashboard (API Version)")
+st.write("Real-time data pulled via Supabase REST. Cache TTL = 30s.")
+
 if df.empty:
-    st.warning("No data returned.")
+    st.warning("No data found. Verify API / CSV or date range.")
     st.stop()
 
+# dynamic filter options
+branch_opts = sorted([b for b in df["branch"].astype(str).unique() if b])
+order_type_opts = sorted([o for o in df["order_type"].astype(str).unique() if o])
+payment_opts = sorted([p for p in df["payment_method"].astype(str).unique() if p])
 
-# Dropdown filter values
-branch_opts = sorted(df["branch"].astype(str).unique())
-order_type_opts = sorted(df["order_type"].astype(str).unique())
-payment_opts = sorted(df["payment_method"].astype(str).unique())
-status_opts = sorted(df["status"].astype(str).str.title().unique())
+# Status options (force include 'Cancelled')
+status_opts = sorted({s for s in df["status"].astype(str).str.title().unique() if s})
+if "Cancelled" not in status_opts:
+    status_opts.append("Cancelled")
 
+# Event / Address options (treat customer_address as event)
+addr_series_all = df.get("customer_address", pd.Series(dtype=str)).astype(str).str.strip()
+addr_opts = sorted([a for a in addr_series_all.unique() if a])
 
-# Extra filters
-with st.sidebar.expander("More filters"):
-    sel_branches = st.multiselect("Branch", branch_opts, branch_opts)
-    sel_order_types = st.multiselect("Order type", order_type_opts, order_type_opts)
-    sel_payments = st.multiselect("Payment method", payment_opts, payment_opts)
-    sel_status = st.multiselect("Status", status_opts, status_opts)
+# Core selectors
+sel_payment_methods = st.sidebar.multiselect(
+    "Payment method",
+    options=payment_opts,
+    default=payment_opts,
+)
 
-
-# APPLY FILTERS
-fdf = df.copy()
-fdf = fdf[fdf["branch"].isin(sel_branches)]
-fdf = fdf[fdf["order_type"].isin(sel_order_types)]
-fdf = fdf[fdf["payment_method"].isin(sel_payments)]
-fdf = fdf[fdf["status"].str.title().isin(sel_status)]
-fdf = fdf[fdf["grand_total"].fillna(0) >= min_amount]
-
-if address_query:
-    fdf = fdf[fdf["customer_address"].str.contains(address_query, case=False, na=False)]
-
-if customer_query:
-    m = (
-        fdf["customer_name"].str.contains(customer_query, case=False, na=False) |
-        fdf["customer_phone"].str.contains(customer_query, case=False, na=False)
+with st.sidebar.expander("More filters", expanded=False):
+    sel_branches = st.multiselect("Branch", options=branch_opts, default=branch_opts)
+    sel_order_types = st.multiselect("Order type", options=order_type_opts, default=order_type_opts)
+    sel_status = st.multiselect("Status", options=status_opts, default=status_opts)
+    sel_addresses = st.multiselect(
+        "Event / Address",
+        options=addr_opts,
+        default=addr_opts if addr_opts else [],
     )
-    fdf = fdf[m]
+
+# ------------------------
+# Apply filters
+# ------------------------
+fdf = df.copy()
+
+# Branch / type / payment / status
+fdf = fdf[fdf["branch"].astype(str).isin(sel_branches)]
+fdf = fdf[fdf["order_type"].astype(str).isin(sel_order_types)]
+fdf = fdf[fdf["payment_method"].astype(str).isin(sel_payment_methods)]
+fdf = fdf[fdf["status"].astype(str).str.title().isin(sel_status)]
+
+# Event / Address (exact match)
+if sel_addresses:
+    fdf = fdf[
+        fdf.get("customer_address", "").astype(str).str.strip().isin(sel_addresses)
+    ]
+
+# Min amount
+fdf = fdf[fdf.get("grand_total", 0).fillna(0) >= min_amount]
+
+# Address contains (free-text search)
+if address_query:
+    fdf = fdf[
+        fdf.get("customer_address", "").astype(str).str.contains(address_query, case=False, na=False)
+    ]
+
+# Customer name/phone contains
+if customer_query:
+    cus_name = fdf.get("customer_name", "").astype(str)
+    cus_phone = fdf.get("customer_phone", "").astype(str)
+    mask = cus_name.str.contains(customer_query, case=False, na=False) | \
+           cus_phone.str.contains(customer_query, case=False, na=False)
+    fdf = fdf[mask]
 
 if fdf.empty:
-    st.warning("No rows after filters.")
+    st.warning("No rows after applying filters.")
     st.stop()
 
+# ------------------------
+# KPIs
+# ------------------------
+total_orders = len(fdf)
+total_gmv = float(fdf["grand_total"].sum(skipna=True)) if "grand_total" in fdf.columns else 0
+avg_ticket = total_gmv / total_orders if total_orders else 0
+total_items = int(fdf["items_count"].sum())
+completed_mask = fdf["status"].astype(str).str.lower().isin(
+    ["delivered", "completed", "paid", "done", "closed"]
+)
+completion_rate = completed_mask.mean() * 100 if total_orders else 0
+
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Orders", f"{total_orders:,}")
+k2.metric("GMV", f"Rs {total_gmv:,.0f}")
+k3.metric("Avg Ticket", f"Rs {avg_ticket:,.0f}")
+k4.metric("Items Sold", f"{total_items:,}")
+k5.metric("Completion", f"{completion_rate:.1f}%")
 
 # ------------------------
-# TABS
+# Trends (hourly or daily depending on range)
 # ------------------------
-main_tab, dfpl_tab = st.tabs(["📊 Dashboard", "🧾 DFPL – EXE Not Working"])
+st.subheader("Sales Over Time")
+range_days = (end_dt - start_dt).days
+if range_days >= 2:
+    fdf["bucket"] = fdf["created_at"].dt.tz_convert(None).dt.floor("D")
+else:
+    fdf["bucket"] = fdf["created_at"].dt.tz_convert(None).dt.floor("H")
 
+by_time = fdf.groupby("bucket", as_index=False).agg(
+    orders=("id", "count") if "id" in fdf.columns else ("grand_total", "size"),
+    gmv=("grand_total", "sum")
+).sort_values("bucket")
+by_time["cum_gmv"] = by_time["gmv"].cumsum()
 
-# ===========================
-# MAIN DASHBOARD TAB
-# ===========================
-with main_tab:
+base = alt.Chart(by_time).encode(x=alt.X("bucket:T", title="Time"))
+st.altair_chart(
+    base.mark_line(point=True).encode(y=alt.Y("orders:Q", title="Orders")),
+    use_container_width=True
+)
+st.altair_chart(
+    base.mark_line(point=True).encode(y=alt.Y("gmv:Q", title="GMV (Rs)")),
+    use_container_width=True
+)
+st.altair_chart(
+    base.mark_line(point=True).encode(y=alt.Y("cum_gmv:Q", title="Cumulative GMV (Rs)")),
+    use_container_width=True
+)
 
-    st.title("📊 Event Sales – Live Dashboard (API Version)")
+# ------------------------
+# Breakdowns
+# ------------------------
+st.subheader("Breakdowns")
+c1, c2 = st.columns(2)
 
-    # KPIs
-    total_orders = len(fdf)
-    total_gmv = fdf["grand_total"].sum()
-    avg_ticket = total_gmv / total_orders if total_orders else 0
-    total_items = fdf["items_count"].sum()
+with c1:
+    if "branch" in fdf.columns:
+        b1 = (
+            fdf.groupby("branch", as_index=False)["grand_total"]
+            .sum()
+            .rename(columns={"grand_total": "gmv"})
+        )
+        st.altair_chart(
+            alt.Chart(b1).mark_bar().encode(
+                x=alt.X("gmv:Q", title="GMV (Rs)"),
+                y=alt.Y("branch:N", sort="-x"),
+                tooltip=["branch", alt.Tooltip("gmv:Q", format=",")]
+            ),
+            use_container_width=True,
+        )
+    if "order_type" in fdf.columns:
+        b2 = fdf.groupby("order_type", as_index=False).agg(
+            orders=("id", "count") if "id" in fdf.columns else ("grand_total", "size"),
+            gmv=("grand_total", "sum")
+        )
+        st.altair_chart(
+            alt.Chart(b2).mark_bar().encode(
+                x="orders:Q",
+                y=alt.Y("order_type:N", sort="-x"),
+                tooltip=["order_type", "orders", alt.Tooltip("gmv:Q", format=",")]
+            ),
+            use_container_width=True,
+        )
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Orders", f"{total_orders:,}")
-    k2.metric("GMV", f"Rs {total_gmv:,.0f}")
-    k3.metric("Avg Ticket", f"Rs {avg_ticket:,.0f}")
-    k4.metric("Items", f"{total_items:,}")
+with c2:
+    if "payment_method" in fdf.columns:
+        b3 = fdf.groupby("payment_method", as_index=False).agg(
+            orders=("id", "count") if "id" in fdf.columns else ("grand_total", "size"),
+            gmv=("grand_total", "sum")
+        )
+        st.altair_chart(
+            alt.Chart(b3).mark_bar().encode(
+                x="orders:Q",
+                y=alt.Y("payment_method:N", sort="-x"),
+                tooltip=["payment_method", "orders", alt.Tooltip("gmv:Q", format=",")]
+            ),
+            use_container_width=True,
+        )
+    if "status" in fdf.columns:
+        b4 = fdf["status"].astype(str).str.title().value_counts().reset_index()
+        b4.columns = ["status", "orders"]
+        st.altair_chart(
+            alt.Chart(b4).mark_bar().encode(
+                x="orders:Q",
+                y=alt.Y("status:N", sort="-x"),
+                tooltip=["status", "orders"]
+            ),
+            use_container_width=True,
+        )
 
-    # RECENT ORDERS
-    st.subheader("Recent Orders")
-    cols = [
-        "created_at","order_number","branch","order_type","payment_method",
-        "grand_total","status","cashier_name","customer_name","customer_phone","customer_address"
-    ]
-    cols = [c for c in cols if c in fdf.columns]
+# ------------------------
+# Address-wise Sales (Filtered Range)
+# ------------------------
+st.subheader("Address-wise Sales (Filtered Range)")
 
-    st.dataframe(
-        fdf.sort_values("created_at", ascending=False).head(100)[cols],
+addr_col = fdf.get("customer_address", pd.Series(dtype=str)).astype(str).str.strip()
+addr_df = fdf.assign(address=addr_col)
+addr_df = addr_df[addr_df["address"] != ""]
+
+if not addr_df.empty:
+    # choose an id-like column for counts
+    if "id" in addr_df.columns:
+        order_id_col = "id"
+    elif "order_number" in addr_df.columns:
+        order_id_col = "order_number"
+    else:
+        order_id_col = None
+
+    if order_id_col:
+        addr_sales = addr_df.groupby("address", as_index=False).agg(
+            orders=(order_id_col, "count"),
+            gmv=("grand_total", "sum")
+        )
+    else:
+        addr_sales = addr_df.groupby("address", as_index=False).agg(
+            orders=("grand_total", "size"),
+            gmv=("grand_total", "sum")
+        )
+
+    addr_sales = addr_sales.sort_values("gmv", ascending=False)
+
+    st.altair_chart(
+        alt.Chart(addr_sales.head(20)).mark_bar().encode(
+            x=alt.X("gmv:Q", title="GMV (Rs)"),
+            y=alt.Y("address:N", sort="-x"),
+            tooltip=["address", "orders", alt.Tooltip("gmv:Q", format=",")]
+        ),
         use_container_width=True,
-        hide_index=True
     )
 
+    st.dataframe(addr_sales, use_container_width=True, hide_index=True)
+else:
+    st.info("No address-level data available for the selected filters/date range.")
 
-# ===========================
-# DFPL TAB — ONLY EXE NOT WORKING
-# ===========================
-with dfpl_tab:
+# ------------------------
+# Address Insights (Top Addresses by Orders)
+# ------------------------
+st.subheader("Address Insights")
 
-    st.header("🧾 DFPL – Only EXE Not Working Orders")
-    st.info("Showing only orders where **customer_address contains 'EXE Not Working'**.")
+addr_series = fdf.get("customer_address", pd.Series(dtype=str)).astype(str).str.strip()
+addr_counts = addr_series[addr_series != ""].value_counts().reset_index()
+addr_counts.columns = ["address", "orders"]
 
-    dfpl_df = fdf[
-        fdf["customer_address"].str.contains("EXE Not Working", case=False, na=False)
-    ].copy()
+if not addr_counts.empty:
+    st.altair_chart(
+        alt.Chart(addr_counts.head(15)).mark_bar().encode(
+            x=alt.X("orders:Q"),
+            y=alt.Y("address:N", sort="-x"),
+            tooltip=["address", "orders"]
+        ),
+        use_container_width=True,
+    )
+    st.dataframe(addr_counts.head(50), use_container_width=True, hide_index=True)
+else:
+    st.info("No non-empty addresses to summarize.")
 
-    # Search inputs
-    search_order_no = st.text_input("Order Number (exact match)")
-    search_text = st.text_input("Name / Phone / Address (contains)")
-    search_min_amount = st.number_input("Min Amount (Rs)", 0, value=0)
+# ------------------------
+# Top Items
+# ------------------------
+st.subheader("Top Items")
+items_rows = []
+for _, row in fdf.iterrows():
+    for it in (row.get("items_parsed") or []):
+        name = it.get("name") or it.get("item") or "Unknown"
+        qty = int(it.get("quantity", 0) or 0)
+        revenue = float(it.get("totalPrice", 0) or 0)
+        items_rows.append({"name": name, "quantity": qty, "revenue": revenue})
+items_df = pd.DataFrame(items_rows)
 
-    # Apply search
-    if search_order_no:
-        dfpl_df = dfpl_df[dfpl_df["order_number"].astype(str) == search_order_no]
+if not items_df.empty:
+    agg = items_df.groupby("name", as_index=False).agg(
+        quantity=("quantity", "sum"),
+        revenue=("revenue", "sum")
+    )
+    agg = agg.sort_values(["revenue", "quantity"], ascending=[False, False]).head(20)
+    st.altair_chart(
+        alt.Chart(agg).mark_bar().encode(
+            x=alt.X("revenue:Q", title="Revenue (Rs)"),
+            y=alt.Y("name:N", sort="-x"),
+            tooltip=["name", "quantity", alt.Tooltip("revenue:Q", format=",")]
+        ),
+        use_container_width=True,
+    )
+    st.dataframe(agg, use_container_width=True, hide_index=True)
+else:
+    st.info("No item-level data available.")
 
-    if search_text:
-        txt = search_text.strip()
-        m = (
-            dfpl_df["customer_name"].str.contains(txt, case=False, na=False) |
-            dfpl_df["customer_phone"].str.contains(txt, case=False, na=False) |
-            dfpl_df["customer_address"].str.contains(txt, case=False, na=False)
-        )
-        dfpl_df = dfpl_df[m]
+# ------------------------
+# Recent Orders + Export
+# ------------------------
+st.subheader("Recent Orders (Filtered)")
+cols = [
+    c for c in [
+        "created_at",
+        "order_number",
+        "branch",
+        "order_type",
+        "payment_method",
+        "grand_total",
+        "status",
+        "cashier_name",
+        "customer_name",
+        "customer_phone",
+        "customer_address",
+    ]
+    if c in fdf.columns
+]
+st.dataframe(
+    fdf.sort_values("created_at", ascending=False).head(100)[cols],
+    use_container_width=True,
+    hide_index=True,
+)
 
-    dfpl_df = dfpl_df[dfpl_df["grand_total"].fillna(0) >= search_min_amount]
-
-    if dfpl_df.empty:
-        st.warning("No EXE Not Working orders match the criteria.")
-    else:
-        st.success(f"{len(dfpl_df):,} matching orders found.")
-
-        view_cols = [
-            "created_at","order_number","branch","order_type",
-            "payment_method","grand_total","status",
-            "cashier_name","customer_name","customer_phone","customer_address"
-        ]
-        view_cols = [c for c in view_cols if c in dfpl_df.columns]
-
-        st.dataframe(
-            dfpl_df.sort_values("created_at", ascending=False)[view_cols],
-            use_container_width=True,
-            hide_index=True
-        )
-
-        # Export
-        csv_buf = io.StringIO()
-        dfpl_df.to_csv(csv_buf, index=False)
-        st.download_button(
-            "⬇️ Download DFPL CSV",
-            csv_buf.getvalue(),
-            "dfpl_exe_not_working_orders.csv",
-            "text/csv"
-        )
-
+# Export filtered
+csv_buf = io.StringIO()
+fdf.to_csv(csv_buf, index=False)
+st.download_button(
+    "⬇️ Download filtered CSV",
+    data=csv_buf.getvalue(),
+    file_name="orders_filtered.csv",
+    mime="text/csv",
+)
 
 st.caption(f"Connected to Supabase REST: {API_URL}")
