@@ -128,7 +128,7 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
 tab_main, tab_dfpl = st.tabs(["Dashboard", "DFPL Panel"])
 
 with tab_dfpl:
-    st.header("📞 DFPL – Today’s Orders")
+    st.header("DFPL – Today’s Orders")
 
     # --- Today’s window (UTC) ---
     today_date = datetime.utcnow().date()
@@ -137,28 +137,32 @@ with tab_dfpl:
 
     dfpl_df = fetch_orders(dfpl_start_dt, dfpl_end_dt)
 
+    # If empty, show message
     if dfpl_df.empty:
         st.warning("No orders found for today.")
-    else:
-        # Phone search
-        phone_filter = st.text_input("Search by phone number", "").strip()
-        if phone_filter:
-            dfpl_df = dfpl_df[
-                dfpl_df["customer_phone"].astype(str).str.contains(phone_filter, case=False, na=False)
-            ]
+        st.stop()
 
-        if dfpl_df.empty:
-            st.warning("No results match your search.")
-        else:
-            # Sort by latest
-            dfpl_df = dfpl_df.sort_values("created_at", ascending=False)
+    # --- Phone number search only ---
+    phone_filter = st.text_input("Search by phone number", "").strip()
 
-            # Show DFPL table
-            st.dataframe(
-                dfpl_df,
-                use_container_width=True,
-                hide_index=True
-            )
+    if phone_filter:
+        dfpl_df = dfpl_df[
+            dfpl_df["customer_phone"].astype(str).str.contains(phone_filter, case=False, na=False)
+        ]
+
+    if dfpl_df.empty:
+        st.warning("No results match your search.")
+        st.stop()
+
+    # Sort newest first
+    dfpl_df = dfpl_df.sort_values("created_at", ascending=False)
+
+    # Show ONLY the table
+    st.dataframe(
+        dfpl_df,
+        use_container_width=True,
+        hide_index=True
+    )
 
             # Export
             csv_buf2 = io.StringIO()
