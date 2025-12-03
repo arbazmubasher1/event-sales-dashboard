@@ -123,10 +123,8 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
     return df
 
 # ============================
-# DFPL TAB
+# DFPL TAB (Today Only)
 # ============================
-tab_main, tab_dfpl = st.tabs(["Dashboard", "DFPL Panel"])
-
 with tab_dfpl:
     st.header("DFPL – Today’s Orders")
 
@@ -135,6 +133,7 @@ with tab_dfpl:
     dfpl_start_dt = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=timezone.utc)
     dfpl_end_dt = datetime.combine(today_date, datetime.max.time()).replace(tzinfo=timezone.utc)
 
+    # Fetch today's orders
     dfpl_df = fetch_orders(dfpl_start_dt, dfpl_end_dt)
 
     # If empty, show message
@@ -143,7 +142,7 @@ with tab_dfpl:
         st.stop()
 
     # --- Phone number search only ---
-    phone_filter = st.text_input("Search by phone number", "").strip()
+    phone_filter = st.text_input("Search by phone number", placeholder="Enter phone number...").strip()
 
     if phone_filter:
         dfpl_df = dfpl_df[
@@ -163,17 +162,6 @@ with tab_dfpl:
         use_container_width=True,
         hide_index=True
     )
-
-            # Export
-            csv_buf2 = io.StringIO()
-            dfpl_df.to_csv(csv_buf2, index=False)
-            st.download_button(
-                "⬇️ Download today's DFPL CSV",
-                data=csv_buf2.getvalue(),
-                file_name="dfpl_today_orders.csv",
-                mime="text/csv",
-            )
-
 
 # ------------------------
 # Sidebar Filters
