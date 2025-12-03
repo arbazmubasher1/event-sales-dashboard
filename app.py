@@ -67,7 +67,8 @@ def fetch_orders(min_dt: Optional[datetime] = None, max_dt: Optional[datetime] =
         df = pd.DataFrame(r.json())
     except Exception:
         st.warning("API error — falling back to local CSV.")
-        df = _load_local_csv() or pd.DataFrame()
+        tmp = _load_local_csv()
+        df = tmp if tmp is not None else pd.DataFrame()
 
     if df.empty:
         return df
