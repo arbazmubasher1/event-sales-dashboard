@@ -3,20 +3,6 @@ import { ShoppingCart, Plus, Minus, Trash2, Clock, MapPin, User, X, Settings, Ed
 import html2canvas from "html2canvas";
 import './App.css';
 
-// Helper: compute display address (handles EXE Not Working + manual address)
-const getDisplayAddress = (customer) => {
-  if (!customer) return '';
-  if (customer.address === 'EXE Not Working') {
-    if (customer.manualAddress && customer.manualAddress.trim() !== '') {
-      return customer.manualAddress.trim();
-    }
-    if (customer.instructions && customer.instructions.trim() !== '') {
-      return customer.instructions.trim();
-    }
-  }
-  return customer.address || '';
-};
-
 function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cart, setCart] = useState([]);
@@ -27,7 +13,7 @@ function App() {
     phone: '',
     address: '',
     instructions: '',
-    manualAddress: '' // NEW: manual address when EXE Not Working is selected
+    manualAddress: ''
   });
   const [cashierInfo, setCashierInfo] = useState({
     name: '',
@@ -54,8 +40,7 @@ function App() {
   const DEFAULT_ADMIN_CONFIG = {
     branches: ["Phase 6", "Phase 4", "Johar Town", "Bahria Town", "Cloud Kitchen", "Emporium"],
     addresses: [
-      { id: 1, value: 'JJ KIOSK CC to 2nd INTERNATIONAL BOXING CHAMPIONSHIP', label: 'JJ KIOSK CC to 2nd INTERNATIONAL BOXING CHAMPIONSHIP' },
-      { id: 2, value: 'EXE Not Working', label: 'EXE Not Working' } // ensure EXE option exists
+      { id: 1, value: 'JJ KIOSK CC to 2nd INTERNATIONAL BOXING CHAMPIONSHIP', label: 'JJ KIOSK CC to 2nd INTERNATIONAL BOXING CHAMPIONSHIP' }
     ],
     paymentMethods: [
       { id: 'cash', name: 'Cash', icon: '💰', enabled: true },
@@ -101,23 +86,17 @@ function App() {
   const [adminConfig, setAdminConfig] = useState(DEFAULT_ADMIN_CONFIG);
   const [branch, setBranch] = useState('');
 
-  // Customization modal state (for MAIN items: 2 sauces + paid addons)
+  // Customization modal state (for mains)
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
   const [currentItem, setCurrentItem] = useState(null);
   const [selectedSauces, setSelectedSauces] = useState([]);
   const [selectedAddons, setSelectedAddons] = useState([]);
 
-  // Sauce modal for Crispy Wings / Nuggs / Sauce Dip (single sauce)
+  // Sauce selection modal state (for wings, nuggs, Balti, Sauce Dip, etc.)
   const [showSauceModal, setShowSauceModal] = useState(false);
-  const [sauceTargetItem, setSauceTargetItem] = useState(null);
-  const [sauceTargetCustomizations, setSauceTargetCustomizations] = useState({});
-  const [selectedSingleSauce, setSelectedSingleSauce] = useState(null);
-
-  // Balti sauce modal (5 sauces, duplicates allowed)
-  const [showBaltiSauceModal, setShowBaltiSauceModal] = useState(false);
-  const [baltiTargetItem, setBaltiTargetItem] = useState(null);
-  const [baltiTargetCustomizations, setBaltiTargetCustomizations] = useState({});
-  const [baltiSauceCounts, setBaltiSauceCounts] = useState({});
+  const [sauceModalItem, setSauceModalItem] = useState(null);
+  const [sauceModalConfig, setSauceModalConfig] = useState({ min: 1, max: 1, allowDuplicates: true });
+  const [sauceSelections, setSauceSelections] = useState([]);
 
   // Hardcoded credentials (for kiosk/dev only – used as fallback)
   const HARD_CODED_USERS = {
@@ -300,58 +279,7 @@ function App() {
 
   // ===================================================
 
-  const submitToSupabase = async (orderData) => {
-    try {
-      console.log('Order data ready for Supabase:', orderData);
-      
-      if (SUPABASE_URL === 'YOUR_SUPABASE_PROJECT_URL' || SUPABASE_ANON_KEY === 'YOUR_SUPABASE_ANON_KEY') {
-        console.log('⚠️ Supabase credentials not configured yet. Order data logged above.');
-        return true;
-      }
-      
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({
-          order_number: orderData.orderNumber,
-          cashier_name: orderData.cashier.name,
-          cashier_id: orderData.cashier.id,
-          customer_name: orderData.customer.name,
-          customer_phone: orderData.customer.phone,
-          customer_address: orderData.customer.effectiveAddress || orderData.customer.address,
-          customer_instructions: orderData.customer.instructions,
-          order_type: orderData.orderType,
-          payment_method: orderData.paymentMethod,
-          items: orderData.items,
-          items_total: orderData.itemsTotal,
-          delivery_charge: orderData.deliveryCharge,
-          grand_total: orderData.grandTotal,
-          status: orderData.status,
-          estimated_time: orderData.estimatedTime,
-          branch: orderData.branch
-        })
-      });
-      
-      if (response.ok || response.status === 201) {
-        console.log('✅ Order successfully saved to Supabase database');
-        return true;
-      } else {
-        const errorText = await response.text();
-        console.error('❌ Failed to save to Supabase:', response.status, errorText);
-        return false;
-      }
-    } catch (error) {
-      console.error('Error submitting to Supabase:', error);
-      return false;
-    }
-  };
-
-  // Available sauces for selection
+  // Available sauces for selection (used in both modals)
   const availableSauces = [
     { id: 7, name: 'Jalapeno', image: '🌶️' },
     { id: 8, name: 'Atomic', image: '🔥' },
@@ -361,7 +289,7 @@ function App() {
     { id: 12, name: 'Mushroom', image: '🍄' }
   ];
 
-  // Available add-ons (paid, used in mains customization)
+  // Available add-ons (for mains customization)
   const availableAddons = [
     { id: 13, name: 'Mushrooms', price: 50, image: '🍄' },
     { id: 14, name: 'Jalapenos', price: 50, image: '🌶️' },
@@ -395,15 +323,15 @@ function App() {
       { id: 16, name: 'Pickles', price: 50, image: '🥒', category: 'extras', description: 'Tangy pickles' },
       { id: 17, name: 'Sweet Corn', price: 50, image: '🌽', category: 'extras', description: 'Sweet corn kernels' },
       { id: 18, name: 'Extra Patty', price: 250, image: '🍖', category: 'extras', description: 'Additional chicken patty' },
-      { id: 19, name: 'Sauce Dip', price: 100, image: '🥄', category: 'extras', description: 'Extra sauce portion (select flavor)' }
+      { id: 19, name: 'Sauce Dip', price: 100, image: '🥄', category: 'extras', description: 'Extra sauce portion', sauceConfig: { min: 1, max: 1, allowDuplicates: true } }
     ],
-    // NEW: Free Add-ons (for zero-priced extras)
+    // NEW: Free Add-ons tab (zero-priced)
     freeAddons: [
-      { id: 101, name: 'Mushrooms (Free)', price: 0, image: '🍄', category: 'freeAddons', description: 'Free mushrooms add-on' },
-      { id: 102, name: 'Jalapenos (Free)', price: 0, image: '🌶️', category: 'freeAddons', description: 'Free jalapenos add-on' },
-      { id: 103, name: 'Cheese (Free)', price: 0, image: '🧀', category: 'freeAddons', description: 'Free cheese add-on' },
-      { id: 104, name: 'Pickles (Free)', price: 0, image: '🥒', category: 'freeAddons', description: 'Free pickles add-on' },
-      { id: 105, name: 'Sweet Corn (Free)', price: 0, image: '🌽', category: 'freeAddons', description: 'Free sweet corn add-on' }
+      { id: 50, name: 'Mushrooms', price: 0, image: '🍄', category: 'freeAddons', description: 'Free mushrooms add-on' },
+      { id: 51, name: 'Jalapenos', price: 0, image: '🌶️', category: 'freeAddons', description: 'Free jalapenos add-on' },
+      { id: 52, name: 'Cheese', price: 0, image: '🧀', category: 'freeAddons', description: 'Free cheese add-on' },
+      { id: 53, name: 'Pickles', price: 0, image: '🥒', category: 'freeAddons', description: 'Free pickles add-on' },
+      { id: 54, name: 'Sweet Corn', price: 0, image: '🌽', category: 'freeAddons', description: 'Free sweet corn add-on' }
     ],
     meals: [
       { id: 20, name: 'Smol Meal', price: 350, withSeasoning: 360, image: '🍟', category: 'meals', description: 'With Seasoning' },
@@ -421,15 +349,52 @@ function App() {
       { id: 43, name: 'Upsize Fries', price: 200, image: '🍟', category: 'fries', description: 'If customer want only fries' }
     ],
     wings: [
-      { id: 24, name: 'Crispy Wings', price: 700, image: '🍗', category: 'wings', description: '8 Pieces + 1 Sauce (choose flavor)' },
+      { 
+        id: 24, 
+        name: 'Crispy Wings', 
+        price: 700, 
+        image: '🍗', 
+        category: 'wings', 
+        description: '8 Pieces + 1 Sauce',
+        sauceConfig: { min: 1, max: 1, allowDuplicates: true }
+      },
       { id: 25, name: 'Rami Wings', price: 750, image: '🍗', category: 'wings', description: '8 Pieces + Rami Sauce' },
       { id: 26, name: 'Gochu Wings', price: 750, image: '🍗', category: 'wings', description: '8 Pieces + Gochujang Sauce' }
     ],
     nuggets: [
-      { id: 27, name: 'Nuggs (3 Pieces)', price: 330, image: '🍗', category: 'nuggets', description: 'Choose 1 sauce' },
-      { id: 28, name: 'Nuggs (6 Pieces)', price: 610, image: '🍗', category: 'nuggets', description: 'Choose 1 sauce' },
-      { id: 29, name: 'Rami Nuggs (6 Pieces)', price: 610, image: '🍗', category: 'nuggets', description: 'Rami Sauce only' },
-      { id: 30, name: 'Balti', price: 2700, image: '🍗', category: 'nuggets', description: '36 Nuggs, 5 Sauces (any, duplicates allowed)' }
+      { 
+        id: 27, 
+        name: 'Nuggs (3 Pieces)', 
+        price: 330, 
+        image: '🍗', 
+        category: 'nuggets',
+        sauceConfig: { min: 1, max: 1, allowDuplicates: true }
+      },
+      { 
+        id: 28, 
+        name: 'Nuggs (6 Pieces)', 
+        price: 610, 
+        image: '🍗', 
+        category: 'nuggets',
+        sauceConfig: { min: 1, max: 1, allowDuplicates: true }
+      },
+      { 
+        id: 29, 
+        name: 'Rami Nuggs (6 Pieces)', 
+        price: 610, 
+        image: '🍗', 
+        category: 'nuggets',
+        sauceConfig: { min: 1, max: 1, allowDuplicates: true }
+      },
+      { 
+        id: 30, 
+        name: 'Balti', 
+        price: 2700, 
+        image: '🍗', 
+        category: 'nuggets', 
+        description: '36 Nuggs, 5 Sauces',
+        sauceConfig: { min: 5, max: 5, allowDuplicates: true }
+      }
     ],
     lemonades: [
       { id: 31, name: 'Wildberry', price: 400, image: '🥤', category: 'lemonades' },
@@ -455,6 +420,7 @@ function App() {
 
   // Helper: apply admin menu overrides (price/name/description/visibility)
   const getEffectiveMenuItems = (categoryId) => {
+    const items = menuData[categoryId] || {};
     const overrides = adminConfig.menuOverrides || {};
 
     return (menuData[categoryId] || [])
@@ -480,6 +446,73 @@ function App() {
         // enabled === false → hide item
         return ov && ov.enabled === false ? false : true;
       });
+  };
+
+  // Helper: display address (handles EXE Not Working + manual address)
+  const getDisplayAddress = (customer) => {
+    if (!customer) return '';
+    if (customer.address === 'EXE Not Working') {
+      if (customer.manualAddress && customer.manualAddress.trim() !== '') {
+        return customer.manualAddress.trim();
+      }
+      if (customer.instructions && customer.instructions.trim() !== '') {
+        return customer.instructions.trim();
+      }
+    }
+    return customer.address || '';
+  };
+
+  const submitToSupabase = async (orderData) => {
+    try {
+      console.log('Order data ready for Supabase:', orderData);
+      
+      if (SUPABASE_URL === 'YOUR_SUPABASE_PROJECT_URL' || SUPABASE_ANON_KEY === 'YOUR_SUPABASE_ANON_KEY') {
+        console.log('⚠️ Supabase credentials not configured yet. Order data logged above.');
+        return true;
+      }
+
+      const effectiveAddress = getDisplayAddress(orderData.customer);
+      
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          order_number: orderData.orderNumber,
+          cashier_name: orderData.cashier.name,
+          cashier_id: orderData.cashier.id,
+          customer_name: orderData.customer.name,
+          customer_phone: orderData.customer.phone,
+          customer_address: effectiveAddress,
+          customer_instructions: orderData.customer.instructions,
+          order_type: orderData.orderType,
+          payment_method: orderData.paymentMethod,
+          items: orderData.items,
+          items_total: orderData.itemsTotal,
+          delivery_charge: orderData.deliveryCharge,
+          grand_total: orderData.grandTotal,
+          status: orderData.status,
+          estimated_time: orderData.estimatedTime,
+          branch: orderData.branch
+        })
+      });
+      
+      if (response.ok || response.status === 201) {
+        console.log('✅ Order successfully saved to Supabase database');
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Failed to save to Supabase:', response.status, errorText);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error submitting to Supabase:', error);
+      return false;
+    }
   };
 
   // Admin Functions
@@ -624,7 +657,6 @@ function App() {
 
     await updateAdminConfig(newConfig);
   };
-
 
   // ====== NEW: User Management Functions (Admin Panel) ======
   const addUser = async () => {
@@ -789,127 +821,18 @@ function App() {
     setShowCustomizationModal(true);
   };
 
-  // Sauce modal (single sauce for Crispy Wings / Nuggs / Sauce Dip)
-  const openSauceModal = (item, customizations = {}) => {
-    setSauceTargetItem(item);
-    setSauceTargetCustomizations(customizations);
-    setSelectedSingleSauce(null);
-    setShowSauceModal(true);
-  };
-
-  const closeSauceModal = () => {
-    setShowSauceModal(false);
-    setSauceTargetItem(null);
-    setSauceTargetCustomizations({});
-    setSelectedSingleSauce(null);
-  };
-
-  const selectSingleSauce = (sauce) => {
-    setSelectedSingleSauce(sauce);
-  };
-
-  const confirmSingleSauceSelection = () => {
-    if (!sauceTargetItem || !selectedSingleSauce) {
-      alert('Please select a sauce');
-      return;
-    }
-
-    const basePrice = sauceTargetCustomizations.withSeasoning || sauceTargetItem.price;
-
-    const cartItem = {
-      ...sauceTargetItem,
-      ...sauceTargetCustomizations,
-      cartId: Date.now() + Math.random(),
-      quantity: 1,
-      finalPrice: basePrice,
-      sauces: [selectedSingleSauce],
-      remarks: ''
-    };
-
-    setCart(prev => [...prev, cartItem]);
-    closeSauceModal();
-  };
-
-  // BALTI sauce modal logic
-  const openBaltiSauceModal = (item, customizations = {}) => {
-    setBaltiTargetItem(item);
-    setBaltiTargetCustomizations(customizations);
-    setBaltiSauceCounts({});
-    setShowBaltiSauceModal(true);
-  };
-
-  const closeBaltiSauceModal = () => {
-    setShowBaltiSauceModal(false);
-    setBaltiTargetItem(null);
-    setBaltiTargetCustomizations({});
-    setBaltiSauceCounts({});
-  };
-
-  const changeBaltiSauceCount = (sauceId, delta) => {
-    setBaltiSauceCounts(prev => {
-      const currentCount = prev[sauceId] || 0;
-      const totalPrev = Object.values(prev).reduce((a, b) => a + b, 0);
-
-      // If adding, don’t exceed 5 total
-      if (delta > 0 && totalPrev >= 5) return prev;
-
-      const next = { ...prev };
-      const updated = currentCount + delta;
-
-      if (updated <= 0) {
-        delete next[sauceId];
-      } else {
-        next[sauceId] = updated;
-        const newTotal = Object.values(next).reduce((a, b) => a + b, 0);
-        if (newTotal > 5) return prev;
-      }
-
-      return next;
-    });
-  };
-
-  const confirmBaltiSauceSelection = () => {
-    if (!baltiTargetItem) return;
-
-    const totalSelected = Object.values(baltiSauceCounts).reduce((a, b) => a + b, 0);
-    if (totalSelected !== 5) {
-      alert(`Please select exactly 5 sauces (you've selected ${totalSelected}).`);
-      return;
-    }
-
-    const saucesArray = [];
-    availableSauces.forEach(sauce => {
-      const count = baltiSauceCounts[sauce.id] || 0;
-      for (let i = 0; i < count; i++) {
-        saucesArray.push(sauce);
-      }
-    });
-
-    const basePrice = baltiTargetCustomizations.withSeasoning || baltiTargetItem.price;
-
-    const cartItem = {
-      ...baltiTargetItem,
-      ...baltiTargetCustomizations,
-      cartId: Date.now() + Math.random(),
-      quantity: 1,
-      finalPrice: basePrice,
-      sauces: saucesArray,
-      remarks: ''
-    };
-
-    setCart(prev => [...prev, cartItem]);
-    closeBaltiSauceModal();
-  };
-
+  // ===== Mains Customization (2 sauces, optional add-ons) =====
   const toggleSauce = (sauce) => {
-    // For mains customization: toggle presence, max 2 sauces, no duplicates
+    // Is this sauce already selected?
     const index = selectedSauces.findIndex((s) => s.id === sauce.id);
 
     if (index !== -1) {
+      // Deselect: remove this sauce from the list
       const next = [...selectedSauces];
       next.splice(index, 1);
       setSelectedSauces(next);
     } else {
+      // Not selected yet → only add if we're below the limit
       if (selectedSauces.length >= 2) {
         alert("You can only select 2 sauces total");
         return;
@@ -962,31 +885,83 @@ function App() {
     setSelectedAddons([]);
   };
 
+  // ===== Generic Sauce Modal (Crispy Wings, Nuggs, Balti, Sauce Dip, etc.) =====
+  const openSauceModal = (item, overrides = {}) => {
+    const baseConfig = item.sauceConfig || { min: 1, max: 1, allowDuplicates: true };
+    setSauceModalItem(item);
+    setSauceModalConfig({ ...baseConfig, ...overrides });
+    setSauceSelections([]);
+    setShowSauceModal(true);
+  };
+
+  const addItemWithSaucesToCart = () => {
+    if (!sauceModalItem) return;
+    const { min, max } = sauceModalConfig;
+
+    if (sauceSelections.length < min) {
+      alert(`Please select at least ${min} sauce${min > 1 ? 's' : ''}`);
+      return;
+    }
+    if (sauceSelections.length > max) {
+      alert(`You can select at most ${max} sauce${max > 1 ? 's' : ''}`);
+      return;
+    }
+
+    const cartItem = {
+      ...sauceModalItem,
+      cartId: Date.now() + Math.random(),
+      quantity: 1,
+      finalPrice: sauceModalItem.price,
+      sauces: sauceSelections,
+      remarks: ''
+    };
+
+    setCart(prev => [...prev, cartItem]);
+    setShowSauceModal(false);
+    setSauceModalItem(null);
+    setSauceSelections([]);
+  };
+
+  const toggleSauceSelection = (sauce) => {
+    const { allowDuplicates, max } = sauceModalConfig;
+    if (allowDuplicates) {
+      if (sauceSelections.length >= max) {
+        return;
+      }
+      setSauceSelections(prev => [...prev, sauce]);
+    } else {
+      const idx = sauceSelections.findIndex(s => s.id === sauce.id);
+      if (idx !== -1) {
+        const next = [...sauceSelections];
+        next.splice(idx, 1);
+        setSauceSelections(next);
+      } else {
+        if (sauceSelections.length >= max) return;
+        setSauceSelections(prev => [...prev, sauce]);
+      }
+    }
+  };
+
+  const removeSauceSelectionAt = (index) => {
+    setSauceSelections(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const countSauceSelection = (sauceId) =>
+    sauceSelections.filter(s => s.id === sauceId).length;
+
   const addToCart = (item, customizations = {}) => {
-    // Mains → full customization modal (2 sauces, addons)
+    // Mains → go through full customization modal
     if (item.category === 'mains') {
       openCustomizationModal(item);
       return;
     }
 
-    // BALTI (36 Nuggs, 5 sauces any, duplicates allowed)
-    if (item.category === 'nuggets' && item.id === 30) {
-      openBaltiSauceModal(item, customizations);
+    // Items that require sauce selection (Crispy Wings, Nuggs, Balti, Sauce Dip)
+    if (item.sauceConfig) {
+      openSauceModal(item);
       return;
     }
 
-    // Crispy Wings only (id:24), Nuggs (3 & 6) (ids 27, 28),
-    // Extras → Sauce Dip (id:19) → single-sauce modal
-    if (
-      (item.category === 'wings'   && item.id === 24) ||                  // Crispy Wings
-      (item.category === 'nuggets' && (item.id === 27 || item.id === 28)) || // Nuggs (3,6)
-      (item.category === 'extras'  && item.id === 19)                     // Sauce Dip
-    ) {
-      openSauceModal(item, customizations);
-      return;
-    }
-
-    // Normal add-to-cart (no sauce logic)
     const cartItem = {
       ...item,
       ...customizations,
@@ -1033,16 +1008,11 @@ function App() {
     const newOrderNumber = Math.floor(Math.random() * 10000);
     setOrderNumber(newOrderNumber);
 
-    const effectiveAddress = getDisplayAddress(customerInfo);
-
     const orderData = {
       orderNumber: newOrderNumber,
       timestamp: new Date().toISOString(),
       cashier: { name: cashierInfo.name, id: cashierInfo.id },
-      customer: {
-        ...customerInfo,
-        effectiveAddress
-      },
+      customer: customerInfo,
       orderType,
       paymentMethod,
       branch,
@@ -1053,8 +1023,8 @@ function App() {
         totalPrice: item.finalPrice * item.quantity,
         withSeasoning: !!item.withSeasoning,
         category: item.category,
-        sauces: item.sauces ? item.sauces.map(s => (typeof s === 'string' ? s : s.name)) : [],
-        addons: item.addons ? item.addons.map(a => (typeof a === 'string' ? a : a.name)) : [],
+        sauces: item.sauces ? item.sauces.map(s => s.name) : [],
+        addons: item.addons ? item.addons.map(a => a.name) : [],
         remarks: item.remarks || ''
       })),
       itemsTotal: cart.reduce((t, i) => t + (i.finalPrice * i.quantity), 0),
@@ -1169,7 +1139,7 @@ function App() {
     </div>
   );
 
-  // Customization Modal Component (for mains: 2 sauces + paid addons)
+  // Customization Modal Component (for mains)
   const CustomizationModal = () => {
     if (!showCustomizationModal || !currentItem) return null;
 
@@ -1195,7 +1165,7 @@ function App() {
                 <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm">
                   {selectedSauces.length}/2 Selected
                 </span>
-                Select 2 Sauces
+                Select 2 Sauces (Duplicates Allowed)
               </h3>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1218,7 +1188,7 @@ function App() {
                       <div className="text-sm font-semibold">{sauce.name}</div>
                       {isSelected && (
                         <span className="absolute top-2 right-2 text-xs font-black bg-orange-600 text-white px-2 py-0.5 rounded-full">
-                          ✓
+                          x1
                         </span>
                       )}
                     </button>
@@ -1309,22 +1279,29 @@ function App() {
     );
   };
 
-  // Single-sauce selection modal (Crispy Wings / Nuggs / Sauce Dip)
+  // Sauce Selection Modal for wings/nuggs/Balti/Sauce Dip/etc.
   const SauceSelectionModal = () => {
-    if (!showSauceModal || !sauceTargetItem) return null;
+    if (!showSauceModal || !sauceModalItem) return null;
+
+    const { min, max } = sauceModalConfig;
+    const remaining = max - sauceSelections.length;
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-          <div className="sticky top-0 bg-gradient-to-r from-purple-500 to-indigo-500 text-white p-4 flex justify-between items-center">
+        <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-gradient-to-r from-purple-500 to-blue-500 text-white p-4 flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold">
-                {sauceTargetItem.image} {sauceTargetItem.name}
+                {sauceModalItem.image} {sauceModalItem.name}
               </h2>
-              <p className="text-sm opacity-90">Select 1 sauce</p>
+              <p className="text-sm opacity-90">Select sauces for this item</p>
             </div>
             <button
-              onClick={closeSauceModal}
+              onClick={() => {
+                setShowSauceModal(false);
+                setSauceModalItem(null);
+                setSauceSelections([]);
+              }}
               className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2"
             >
               <X size={24} />
@@ -1332,145 +1309,82 @@ function App() {
           </div>
 
           <div className="p-6">
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {availableSauces.map((sauce) => {
-                const isSelected = selectedSingleSauce && selectedSingleSauce.id === sauce.id;
-                return (
-                  <button
-                    key={sauce.id}
-                    onClick={() => selectSingleSauce(sauce)}
-                    className={`p-3 rounded-lg border-2 transition-all flex flex-col items-center ${
-                      isSelected
-                        ? 'border-purple-500 bg-purple-50 shadow-md'
-                        : 'border-gray-300 hover:border-purple-300'
-                    }`}
-                  >
-                    <div className="text-3xl mb-1">{sauce.image}</div>
-                    <div className="text-sm font-semibold">{sauce.name}</div>
-                    {isSelected && (
-                      <span className="mt-2 text-xs font-bold text-purple-700 bg-white px-2 py-0.5 rounded-full">
-                        Selected
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={confirmSingleSauceSelection}
-              disabled={!selectedSingleSauce}
-              className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {selectedSingleSauce ? `Add with ${selectedSingleSauce.name}` : 'Select a sauce to continue'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Balti 5-sauce selection modal
-  const BaltiSauceModal = () => {
-    if (!showBaltiSauceModal || !baltiTargetItem) return null;
-
-    const totalSelected = Object.values(baltiSauceCounts).reduce((a, b) => a + b, 0);
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-          <div className="sticky top-0 bg-gradient-to-r from-amber-500 to-orange-500 text-white p-4 flex justify-between items-center">
-            <div>
-              <h2 className="text-2xl font-bold">
-                {baltiTargetItem.image} {baltiTargetItem.name}
-              </h2>
-              <p className="text-sm opacity-90">
-                Select 5 sauces (duplicates allowed)
-              </p>
-            </div>
-            <button
-              onClick={closeBaltiSauceModal}
-              className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2"
-            >
-              <X size={24} />
-            </button>
-          </div>
-
-          <div className="p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-sm font-semibold">
-                Total sauces selected:
-              </span>
-              <span className="text-lg font-bold">
-                {totalSelected} / 5
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {availableSauces.map((sauce) => {
-                const count = baltiSauceCounts[sauce.id] || 0;
-                const disabledAdd = totalSelected >= 5;
-
-                return (
-                  <div
-                    key={sauce.id}
-                    className={`p-3 rounded-lg border-2 flex flex-col items-center gap-2 ${
-                      count > 0
-                        ? 'border-amber-500 bg-amber-50 shadow-md'
-                        : 'border-gray-300'
-                    }`}
-                  >
-                    <div className="text-3xl">{sauce.image}</div>
-                    <div className="text-sm font-semibold text-center">
-                      {sauce.name}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <button
-                        onClick={() => changeBaltiSauceCount(sauce.id, -1)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full border border-gray-400 text-gray-700"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span className="w-6 text-center text-sm font-semibold">
-                        {count}
-                      </span>
-                      <button
-                        onClick={() => changeBaltiSauceCount(sauce.id, 1)}
-                        disabled={disabledAdd}
-                        className={`w-7 h-7 flex items-center justify-center rounded-full border text-white ${
-                          disabledAdd
-                            ? 'bg-gray-300 border-gray-300 cursor-not-allowed'
-                            : 'bg-amber-500 border-amber-500 hover:bg-amber-600'
-                        }`}
-                      >
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="bg-gray-100 rounded-lg p-4 mb-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Balti Price:</span>
-                <span className="font-semibold">
-                  PKR {baltiTargetCustomizations.withSeasoning || baltiTargetItem.price}
+            <div className="mb-4">
+              <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
+                <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm">
+                  {sauceSelections.length}/{max} Selected
                 </span>
-              </div>
-              <p className="text-xs text-gray-600 mt-2">
-                This price includes 36 nuggets and 5 sauces. Sauces are chosen above.
+                {min === max
+                  ? `Select exactly ${min} sauce${min > 1 ? 's' : ''}`
+                  : `Select between ${min} and ${max} sauces`}
+              </h3>
+              <p className="text-xs text-gray-600 mb-3">
+                Tap a sauce to add it. You can add the same sauce multiple times. Remove using the chips below.
               </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {availableSauces.map((sauce) => {
+                  const count = countSauceSelection(sauce.id);
+                  const isSelected = count > 0;
+                  const disabled = !isSelected && sauceSelections.length >= max;
+
+                  return (
+                    <button
+                      key={sauce.id}
+                      onClick={() => !disabled && toggleSauceSelection(sauce)}
+                      className={`relative p-3 rounded-lg border-2 transition-all ${
+                        isSelected
+                          ? 'border-purple-500 bg-purple-50 shadow-md'
+                          : disabled
+                            ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
+                            : 'border-gray-300 hover:border-purple-300'
+                      }`}
+                    >
+                      <div className="text-3xl mb-1">{sauce.image}</div>
+                      <div className="text-sm font-semibold">{sauce.name}</div>
+                      {isSelected && (
+                        <span className="absolute top-2 right-2 text-xs font-black bg-purple-600 text-white px-2 py-0.5 rounded-full">
+                          x{count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {sauceSelections.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {sauceSelections.map((s, idx) => (
+                    <span
+                      key={`${s.id}-${idx}`}
+                      className="inline-flex items-center gap-2 bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-semibold"
+                    >
+                      {s.name}
+                      <button
+                        onClick={() => removeSauceSelectionAt(idx)}
+                        className="bg-purple-600 text-white rounded-full px-1 leading-none"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 text-xs text-gray-500">
+                Remaining selections: {remaining >= 0 ? remaining : 0}
+              </div>
             </div>
 
             <button
-              onClick={confirmBaltiSauceSelection}
-              disabled={totalSelected !== 5}
-              className="w-full bg-amber-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              onClick={addItemWithSaucesToCart}
+              disabled={sauceSelections.length < min || sauceSelections.length > max}
+              className="w-full bg-purple-500 text-white py-4 rounded-lg font-bold text-lg hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
-              {totalSelected === 5
-                ? 'Add Balti with selected sauces'
-                : `Select ${5 - totalSelected} more sauce(s)`}
+              {sauceSelections.length < min
+                ? `Select at least ${min} sauce${min > 1 ? 's' : ''}`
+                : 'Add to Cart'}
             </button>
           </div>
         </div>
@@ -2205,13 +2119,14 @@ function App() {
 
                   setCashierInfo((prev) => ({
                     ...prev,
-                    id: loginId,
-                    name: selectedUser?.name || prev.name,
+                    id: loginId,                      // store loginId in cashierInfo.id
+                    name: selectedUser?.name || prev.name, // auto-fill name if present
                   }));
 
+                  // Optional: auto-set branch from user config
                   if (selectedUser?.branch) {
                     setBranch(selectedUser.branch);
-                    saveSession();
+                    saveSession(); // persist the branch change
                   }
                 }}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
@@ -2273,8 +2188,9 @@ function App() {
 
   // Customer Information Step
   if (currentStep === 'customer') {
-    const isExeAddress = orderType === 'delivery' && customerInfo.address === 'EXE Not Working';
-    const deliveryIncomplete =
+    const isExeAddress =
+      orderType === 'delivery' && customerInfo.address === 'EXE Not Working';
+    const deliveryAddressMissing =
       orderType === 'delivery' && (
         !customerInfo.address ||
         (isExeAddress && (!customerInfo.manualAddress || !customerInfo.manualAddress.trim()))
@@ -2361,7 +2277,14 @@ function App() {
                 <label className="block text-sm font-medium mb-2">Delivery Location *</label>
                 <select
                   value={customerInfo.address}
-                  onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setCustomerInfo(prev => ({
+                      ...prev,
+                      address: value,
+                      manualAddress: value === 'EXE Not Working' ? prev.manualAddress : ''
+                    }));
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   required
                 >
@@ -2379,7 +2302,12 @@ function App() {
                   </label>
                   <textarea
                     value={customerInfo.manualAddress}
-                    onChange={(e) => setCustomerInfo({ ...customerInfo, manualAddress: e.target.value })}
+                    onChange={(e) =>
+                      setCustomerInfo(prev => ({
+                        ...prev,
+                        manualAddress: e.target.value
+                      }))
+                    }
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     rows={3}
                     placeholder="Type full delivery address here..."
@@ -2390,7 +2318,7 @@ function App() {
           )}
 
           <div className="mt-4">
-            <label className="block text-sm font-medium mb-2">Special Instructions / Notes</label>
+            <label className="block text-sm font-medium mb-2">Special Instructions/ Delivery Address (EXE Not Working)</label>
             <textarea
               value={customerInfo.instructions}
               onChange={(e) => setCustomerInfo({...customerInfo, instructions: e.target.value})}
@@ -2432,7 +2360,7 @@ function App() {
                 !customerInfo.name ||
                 !customerInfo.phone ||
                 !branch ||
-                deliveryIncomplete
+                deliveryAddressMissing
               }
               className="flex-1 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300"
             >
@@ -2446,7 +2374,7 @@ function App() {
 
   // Receipt Step
   if (currentStep === 'receipt') {
-    const effectiveReceiptAddress = getDisplayAddress(customerInfo);
+    const effectiveAddress = getDisplayAddress(customerInfo);
 
     return (
       <div className="max-w-md mx-auto p-4 bg-white min-h-screen print:shadow-none" id="receipt">
@@ -2485,8 +2413,8 @@ function App() {
               paymentMethod === 'online' ? 'ONLINE PAYMENT' :
               paymentMethod === 'marketing' ? 'MARKETING PR TAB' : (paymentMethod || '').toUpperCase()
             }</span></p>
-            {orderType === 'delivery' && effectiveReceiptAddress && (
-              <p className="col-span-2">Address: <span className="text-orange-800">{effectiveReceiptAddress}</span></p>
+            {orderType === 'delivery' && effectiveAddress && (
+              <p className="col-span-2">Address: <span className="text-orange-800">{effectiveAddress}</span></p>
             )}
             {customerInfo.instructions && (
               <p className="col-span-2">Instructions: <span className="text-orange-800">{customerInfo.instructions}</span></p>
@@ -2638,8 +2566,8 @@ function App() {
                   paymentMethod === 'online' ? 'Online Payment' :
                   paymentMethod === 'marketing' ? 'Marketing PR Tab' : paymentMethod
                 }</p>
-                {orderType === 'delivery' && effectiveAddress && (
-                  <p><strong>Address:</strong> {effectiveAddress}</p>
+                {orderType === 'delivery' && (
+                  <p><strong>Address:</strong> {effectiveAddress || customerInfo.address}</p>
                 )}
                 {customerInfo.instructions && <p><strong>Instructions:</strong> {customerInfo.instructions}</p>}
               </div>
@@ -2661,14 +2589,18 @@ function App() {
                   </div>
 
                   {item.sauces && item.sauces.length > 0 && (
-                    <div className="text-xs text-blue-600 mb-2">
-                      Sauces: {item.sauces.map(s => (typeof s === 'string' ? s : s.name)).join(', ')}
+                    <div className="mt-1 text-xs text-blue-700">
+                      Sauces: {item.sauces.map((sauce) =>
+                        typeof sauce === "string" ? sauce : sauce.name
+                      ).join(", ")}
                     </div>
                   )}
 
                   {item.addons && item.addons.length > 0 && (
-                    <div className="text-xs text-green-600 mb-2">
-                      Add-ons: {item.addons.map(a => (typeof a === 'string' ? a : a.name)).join(', ')}
+                    <div className="mt-1 text-xs text-green-700">
+                      Add-ons: {item.addons.map((addon) =>
+                        typeof addon === "string" ? addon : addon.name
+                      ).join(", ")}
                     </div>
                   )}
 
@@ -2805,7 +2737,6 @@ function App() {
       <>
         <CustomizationModal />
         <SauceSelectionModal />
-        <BaltiSauceModal />
         <div className="max-w-7xl mx-auto p-4 bg-gray-50 min-h-screen">
           {/* Header */}
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
@@ -2961,10 +2892,10 @@ function App() {
         </div>
       </>
     );
-  }
+  } // closes if (currentStep === 'menu')
 
   // Fallback (should normally never hit)
   return null;
-}
+} // closes function App
 
 export default App;
