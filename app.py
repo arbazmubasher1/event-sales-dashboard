@@ -171,9 +171,51 @@ with tab_dfpl:
         st.warning("No matching results.")
         st.stop()
 
+    # ---------- NEW: pretty-print items instead of {object} ----------
+    if "items_parsed" in dfpl.columns:
+        def format_items(lst):
+            # lst should be a list of dicts like [{"name": "...", "quantity": 2, ...}, ...]
+            if not isinstance(lst, (list, tuple)):
+                return ""
+            parts = []
+            for it in lst:
+                if not isinstance(it, dict):
+                    continue
+                name = it.get("name") or it.get("item") or "Item"
+                qty = it.get("quantity") or 0
+                parts.append(f"{qty} x {name}")
+            return ", ".join(parts)
+
+        dfpl["items_display"] = dfpl["items_parsed"].apply(format_items)
+    else:
+        dfpl["items_display"] = ""
+
+    # Sort newest first
     dfpl = dfpl.sort_values("created_at", ascending=False)
 
-    st.dataframe(dfpl, use_container_width=True, hide_index=True)
+    # Only show the useful columns + the new items_display
+    cols_dfpl = [
+        c for c in [
+            "created_at",
+            "order_number",
+            "branch",
+            "order_type",
+            "payment_method",
+            "grand_total",
+            "status",
+            "cashier_name",
+            "customer_name",
+            "customer_phone",
+            "customer_address",
+            "items_display",   # 👈 human-readable items
+        ] if c in dfpl.columns
+    ]
+
+    st.dataframe(
+        dfpl[cols_dfpl],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 # ==============================================================
 # MAIN DASHBOARD TAB (YOUR ORIGINAL ENTIRE UI)
