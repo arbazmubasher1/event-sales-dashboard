@@ -98,7 +98,7 @@ function App() {
   const [sauceModalConfig, setSauceModalConfig] = useState({ min: 1, max: 1, allowDuplicates: true });
   const [sauceSelections, setSauceSelections] = useState([]);
 
-  // Hardcoded credentials (for kiosk/dev only – used as fallback)
+  # Hardcoded credentials (for kiosk/dev only – used as fallback)
   const HARD_CODED_USERS = {
     spider: '9696',
     lupin: '9696',
