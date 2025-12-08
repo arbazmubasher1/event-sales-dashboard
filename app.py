@@ -798,7 +798,7 @@ function App() {
       return;
     }
 
-    // 2) Fallback to old hardcoded users (for backwards compatibility)
+    // Fallback to old hardcoded users (for backwards compatibility)
     if (HARD_CODED_USERS[enteredId] && HARD_CODED_USERS[enteredId] === enteredPassword) {
       setLoginError('');
       if (!cashierInfo.name || cashierInfo.name.trim() === '') {
