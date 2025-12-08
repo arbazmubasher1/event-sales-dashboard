@@ -26,7 +26,7 @@ function App() {
   const [deliveryCharges, setDeliveryCharges] = useState(0);
   const [orderNumber, setOrderNumber] = useState(null);
 
-  // Admin state
+  # Admin state
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
   const [activeAdminTab, setActiveAdminTab] = useState('addresses');
@@ -34,9 +34,9 @@ function App() {
   const [adminConfigLoading, setAdminConfigLoading] = useState(true);
   const [adminSaving, setAdminSaving] = useState(false);
 
-  const ADMIN_PASSWORD = 'admin123'; // Change this to a secure password
+  const ADMIN_PASSWORD = 'admin123'; # Change this to a secure password
 
-  // Default admin config
+  # Default admin config
   const DEFAULT_ADMIN_CONFIG = {
     branches: ["Phase 6", "Phase 4", "Johar Town", "Bahria Town", "Cloud Kitchen", "Emporium"],
     addresses: [
@@ -52,7 +52,7 @@ function App() {
       { amount: 0, label: 'No Delivery Charges' },
       { amount: 100, label: 'Standard Delivery' }
     ],
-    // NEW: cashier users editable from Admin Panel
+    # NEW: cashier users editable from Admin Panel
     users: [
       {
         loginId: 'spider',
@@ -79,20 +79,20 @@ function App() {
         active: true
       }
     ],
-    // Per-item overrides for menu items
-    menuOverrides: {}   // { [itemId]: { name, price, description, withSeasoning, enabled } }
+    # Per-item overrides for menu items
+    menuOverrides: {}   # { [itemId]: { name, price, description, withSeasoning, enabled } }
   };
 
   const [adminConfig, setAdminConfig] = useState(DEFAULT_ADMIN_CONFIG);
   const [branch, setBranch] = useState('');
 
-  // Customization modal state (for mains)
+  # Customization modal state (for mains)
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
   const [currentItem, setCurrentItem] = useState(null);
   const [selectedSauces, setSelectedSauces] = useState([]);
   const [selectedAddons, setSelectedAddons] = useState([]);
 
-  // Sauce selection modal state (for wings, nuggs, Balti, Sauce Dip, etc.)
+  # Sauce selection modal state (for wings, nuggs, Balti, Sauce Dip, etc.)
   const [showSauceModal, setShowSauceModal] = useState(false);
   const [sauceModalItem, setSauceModalItem] = useState(null);
   const [sauceModalConfig, setSauceModalConfig] = useState({ min: 1, max: 1, allowDuplicates: true });
@@ -105,7 +105,7 @@ function App() {
     wehshi: '9696'
   };
 
-  // ======== LOGIN PERSISTENCE (localStorage) =========
+  # ======== LOGIN PERSISTENCE (localStorage) =========
   const SESSION_KEY = 'jj_kiosk_session';
 
   const saveSession = (stepOverride = null) => {
@@ -122,7 +122,7 @@ function App() {
     localStorage.removeItem(SESSION_KEY);
   };
 
-  // Hydrate session on first load/refresh
+  # Hydrate session on first load/refresh
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
@@ -144,12 +144,12 @@ function App() {
     setTimeout(() => saveSession(step), 0);
   };
 
-  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://lugtmmcpcgzyytkzqozn.supabase.co';
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https:#lugtmmcpcgzyytkzqozn.supabase.co';
   const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Z3RtbWNwY2d6eXl0a3pxb3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzODk0MDQsImV4cCI6MjA3NDk2NTQwNH0.uSEDsRNpH_QGwgGxrrxuYKCkuH3lszd8O9w7GN9INpE';
 
-  // ======== SUPABASE ADMIN CONFIG FUNCTIONS =========
+  # ======== SUPABASE ADMIN CONFIG FUNCTIONS =========
   
-  // Load admin config from Supabase on app start
+  # Load admin config from Supabase on app start
   useEffect(() => {
     loadAdminConfig();
   }, []);
@@ -174,7 +174,7 @@ function App() {
         if (data && data.length > 0) {
           const rawConfig = data[0].config_data || {};
 
-          // Merge with defaults so new fields like menuOverrides/users always exist
+          # Merge with defaults so new fields like menuOverrides/users always exist
           const mergedConfig = {
             ...DEFAULT_ADMIN_CONFIG,
             ...rawConfig,
@@ -197,7 +197,7 @@ function App() {
       }
     } catch (error) {
       console.error('Error loading admin config:', error);
-      // fall back to defaults so app still works
+      # fall back to defaults so app still works
       setAdminConfig(DEFAULT_ADMIN_CONFIG);
     } finally {
       setAdminConfigLoading(false);
@@ -208,7 +208,7 @@ function App() {
     try {
       setAdminSaving(true);
       
-      // First, try to get existing config
+      # First, try to get existing config
       const getResponse = await fetch(`${SUPABASE_URL}/rest/v1/kiosk_config?select=id&limit=1`, {
         method: 'GET',
         headers: {
@@ -220,7 +220,7 @@ function App() {
       const existingData = await getResponse.json();
       
       if (existingData && existingData.length > 0) {
-        // Update existing config
+        # Update existing config
         const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/kiosk_config?id=eq.${existingData[0].id}`, {
           method: 'PATCH',
           headers: {
@@ -240,7 +240,7 @@ function App() {
           return true;
         }
       } else {
-        // Insert new config
+        # Insert new config
         const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/kiosk_config`, {
           method: 'POST',
           headers: {
@@ -271,15 +271,15 @@ function App() {
     }
   };
 
-  // Update admin config and save to Supabase
+  # Update admin config and save to Supabase
   const updateAdminConfig = async (newConfig) => {
     setAdminConfig(newConfig);
     await saveAdminConfigToSupabase(newConfig);
   };
 
-  // ===================================================
+  # ===================================================
 
-  // Available sauces for selection (used in both modals)
+  # Available sauces for selection (used in both modals)
   const availableSauces = [
     { id: 7, name: 'Jalapeno', image: '🌶️' },
     { id: 8, name: 'Atomic', image: '🔥' },
@@ -289,7 +289,7 @@ function App() {
     { id: 12, name: 'Mushroom', image: '🍄' }
   ];
 
-  // Available add-ons (for mains customization)
+  # Available add-ons (for mains customization)
   const availableAddons = [
     { id: 13, name: 'Mushrooms', price: 50, image: '🍄' },
     { id: 14, name: 'Jalapenos', price: 50, image: '🌶️' },
@@ -325,7 +325,7 @@ function App() {
       { id: 18, name: 'Extra Patty', price: 250, image: '🍖', category: 'extras', description: 'Additional chicken patty' },
       { id: 19, name: 'Sauce Dip', price: 100, image: '🥄', category: 'extras', description: 'Extra sauce portion', sauceConfig: { min: 1, max: 1, allowDuplicates: true } }
     ],
-    // NEW: Free Add-ons tab (zero-priced)
+    # NEW: Free Add-ons tab (zero-priced)
     freeAddons: [
       { id: 50, name: 'Mushrooms', price: 0, image: '🍄', category: 'freeAddons', description: 'Free mushrooms add-on' },
       { id: 51, name: 'Jalapenos', price: 0, image: '🌶️', category: 'freeAddons', description: 'Free jalapenos add-on' },
@@ -418,7 +418,7 @@ function App() {
     { id: 'lemonades', name: 'Lemonades', icon: '🥤' }
   ];
 
-  // Helper: apply admin menu overrides (price/name/description/visibility)
+  # Helper: apply admin menu overrides (price/name/description/visibility)
   const getEffectiveMenuItems = (categoryId) => {
     const items = menuData[categoryId] || {};
     const overrides = adminConfig.menuOverrides || {};
@@ -443,12 +443,12 @@ function App() {
       })
       .filter((item) => {
         const ov = overrides[item.id];
-        // enabled === false → hide item
+        # enabled === false → hide item
         return ov && ov.enabled === false ? false : true;
       });
   };
 
-  // Helper: display address (handles EXE Not Working + manual address)
+  # Helper: display address (handles EXE Not Working + manual address)
   const getDisplayAddress = (customer) => {
     if (!customer) return '';
     if (customer.address === 'EXE Not Working') {
@@ -515,7 +515,7 @@ function App() {
     }
   };
 
-  // Admin Functions
+  # Admin Functions
   const handleAdminLogin = () => {
     if (adminPassword === ADMIN_PASSWORD) {
       setAdminError('');
@@ -617,22 +617,22 @@ function App() {
     await updateAdminConfig(newConfig);
   };
 
-  // NEW: Add Payment Method
+  # NEW: Add Payment Method
   const addPaymentMethod = async () => {
     const name = prompt('Enter payment method name (e.g., JazzCash, Easypaisa, Bank Transfer):');
     if (!name || !name.trim()) return;
 
-    // Generate a safe ID from the name
+    # Generate a safe ID from the name
     let idBase = name.trim().toLowerCase()
-      .replace(/\s+/g, '_')        // spaces -> underscores
-      .replace(/[^a-z0-9_]/g, ''); // remove weird chars
+      .replace(/\s+/g, '_')        # spaces -> underscores
+      .replace(/[^a-z0-9_]/g, ''); # remove weird chars
 
     if (!idBase) {
       alert('Could not generate a valid ID from this name. Please try a simpler name.');
       return;
     }
 
-    // Ensure uniqueness
+    # Ensure uniqueness
     const existingIds = (adminConfig.paymentMethods || []).map(pm => pm.id);
     let id = idBase;
     let counter = 2;
@@ -658,7 +658,7 @@ function App() {
     await updateAdminConfig(newConfig);
   };
 
-  // ====== NEW: User Management Functions (Admin Panel) ======
+  # ====== NEW: User Management Functions (Admin Panel) ======
   const addUser = async () => {
     const loginId = prompt('Enter new cashier login ID (e.g., spider):');
     if (!loginId || !loginId.trim()) return;
@@ -754,7 +754,7 @@ function App() {
     await updateAdminConfig(newConfig);
   };
 
-  // Login handler using adminConfig.users (with fallback to hardcoded creds)
+  # Login handler using adminConfig.users (with fallback to hardcoded creds)
   const handleLogin = () => {
     const enteredIdRaw = (cashierInfo.id || '').trim();
     const enteredId = enteredIdRaw.toLowerCase();
@@ -767,12 +767,12 @@ function App() {
 
     const usersList = adminConfig.users || [];
 
-    // 1) Try matching a user from adminConfig.users
+    # 1) Try matching a user from adminConfig.users
     const matchedUser = usersList.find(
       (u) =>
         u.loginId &&
         u.loginId.toLowerCase() === enteredId &&
-        (u.active !== false) // treat undefined as active
+        (u.active !== false) # treat undefined as active
     );
 
     if (matchedUser && matchedUser.password === enteredPassword) {
@@ -813,7 +813,7 @@ function App() {
     }
   };
 
-  // Open customization modal for mains items
+  # Open customization modal for mains items
   const openCustomizationModal = (item) => {
     setCurrentItem(item);
     setSelectedSauces([]);
@@ -821,18 +821,18 @@ function App() {
     setShowCustomizationModal(true);
   };
 
-  // ===== Mains Customization (2 sauces, optional add-ons) =====
+  # ===== Mains Customization (2 sauces, optional add-ons) =====
   const toggleSauce = (sauce) => {
-    // Is this sauce already selected?
+    # Is this sauce already selected?
     const index = selectedSauces.findIndex((s) => s.id === sauce.id);
 
     if (index !== -1) {
-      // Deselect: remove this sauce from the list
+      # Deselect: remove this sauce from the list
       const next = [...selectedSauces];
       next.splice(index, 1);
       setSelectedSauces(next);
     } else {
-      // Not selected yet → only add if we're below the limit
+      # Not selected yet → only add if we're below the limit
       if (selectedSauces.length >= 2) {
         alert("You can only select 2 sauces total");
         return;
@@ -885,7 +885,7 @@ function App() {
     setSelectedAddons([]);
   };
 
-  // ===== Generic Sauce Modal (Crispy Wings, Nuggs, Balti, Sauce Dip, etc.) =====
+  # ===== Generic Sauce Modal (Crispy Wings, Nuggs, Balti, Sauce Dip, etc.) =====
   const openSauceModal = (item, overrides = {}) => {
     const baseConfig = item.sauceConfig || { min: 1, max: 1, allowDuplicates: true };
     setSauceModalItem(item);
@@ -950,13 +950,13 @@ function App() {
     sauceSelections.filter(s => s.id === sauceId).length;
 
   const addToCart = (item, customizations = {}) => {
-    // Mains → go through full customization modal
+    # Mains → go through full customization modal
     if (item.category === 'mains') {
       openCustomizationModal(item);
       return;
     }
 
-    // Items that require sauce selection (Crispy Wings, Nuggs, Balti, Sauce Dip)
+    # Items that require sauce selection (Crispy Wings, Nuggs, Balti, Sauce Dip)
     if (item.sauceConfig) {
       openSauceModal(item);
       return;
@@ -1139,7 +1139,7 @@ function App() {
     </div>
   );
 
-  // Customization Modal Component (for mains)
+  # Customization Modal Component (for mains)
   const CustomizationModal = () => {
     if (!showCustomizationModal || !currentItem) return null;
 
@@ -1279,7 +1279,7 @@ function App() {
     );
   };
 
-  // Sauce Selection Modal for wings/nuggs/Balti/Sauce Dip/etc.
+  # Sauce Selection Modal for wings/nuggs/Balti/Sauce Dip/etc.
   const SauceSelectionModal = () => {
     if (!showSauceModal || !sauceModalItem) return null;
 
@@ -1392,7 +1392,7 @@ function App() {
     );
   };
 
-  // Loading screen while admin config loads
+  # Loading screen while admin config loads
   if (adminConfigLoading) {
     return (
       <div className="max-w-md mx-auto p-4 bg-gray-50 min-h-screen flex items-center justify-center">
@@ -1405,7 +1405,7 @@ function App() {
     );
   }
 
-  // Admin Login Step
+  # Admin Login Step
   if (currentStep === 'admin') {
     return (
       <div className="max-w-md mx-auto p-4 bg-gray-50 min-h-screen flex items-center">
@@ -1455,7 +1455,7 @@ function App() {
     );
   }
 
-  // Admin Dashboard Step
+  # Admin Dashboard Step
   if (currentStep === 'admin-dashboard') {
     return (
       <div className="max-w-7xl mx-auto p-4 bg-gray-50 min-h-screen">
@@ -2076,7 +2076,7 @@ function App() {
     );
   }
 
-  // Cashier Information Step
+  # Cashier Information Step
   if (currentStep === 'cashier') {
     return (
       <div className="max-w-md mx-auto p-4 bg-gray-50 min-h-screen flex items-center">
@@ -2119,14 +2119,14 @@ function App() {
 
                   setCashierInfo((prev) => ({
                     ...prev,
-                    id: loginId,                      // store loginId in cashierInfo.id
-                    name: selectedUser?.name || prev.name, // auto-fill name if present
+                    id: loginId,                      # store loginId in cashierInfo.id
+                    name: selectedUser?.name || prev.name, # auto-fill name if present
                   }));
 
-                  // Optional: auto-set branch from user config
+                  # Optional: auto-set branch from user config
                   if (selectedUser?.branch) {
                     setBranch(selectedUser.branch);
-                    saveSession(); // persist the branch change
+                    saveSession(); # persist the branch change
                   }
                 }}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
@@ -2186,7 +2186,7 @@ function App() {
     );
   }
 
-  // Customer Information Step
+  # Customer Information Step
   if (currentStep === 'customer') {
     const isExeAddress =
       orderType === 'delivery' && customerInfo.address === 'EXE Not Working';
@@ -2372,7 +2372,7 @@ function App() {
     );
   }
 
-  // Receipt Step
+  # Receipt Step
   if (currentStep === 'receipt') {
     const effectiveAddress = getDisplayAddress(customerInfo);
 
@@ -2535,7 +2535,7 @@ function App() {
     );
   }
 
-  // Order Confirmation Step
+  # Order Confirmation Step
   if (currentStep === 'confirm') {
     const effectiveAddress = getDisplayAddress(customerInfo);
 
@@ -2700,7 +2700,7 @@ function App() {
                 <div className="flex items-center justify-center gap-2">
                   <svg
                     className="animate-spin h-5 w-5 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
+                    xmlns="http:#www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
                   >
@@ -2731,7 +2731,7 @@ function App() {
     );
   }
 
-  // Main Menu Step
+  # Main Menu Step
   if (currentStep === 'menu') {
     return (
       <>
@@ -2892,10 +2892,10 @@ function App() {
         </div>
       </>
     );
-  } // closes if (currentStep === 'menu')
+  } # closes if (currentStep === 'menu')
 
-  // Fallback (should normally never hit)
+  # Fallback (should normally never hit)
   return null;
-} // closes function App
+} # closes function App
 
 export default App;
